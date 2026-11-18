@@ -105,7 +105,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, Vector2(get_viewport_rect().size)), BACKGROUND_COLOR, true)
+	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), BACKGROUND_COLOR, true)
 	_draw_label("MOLTKE ENGINE", Vector2(70, 54), 30, Color(0.93, 0.95, 0.98))
 	_draw_label(
 		"World Map prototype  |  Shared province data  |  Click a province",
@@ -174,7 +174,13 @@ func _draw_province_tile(province: ProvinceData, rect: Rect2) -> void:
 
 
 func _format_population(value: int) -> String:
-	return str(value).reverse().insert(",", 3).reverse() if value >= 1000 else str(value)
+	var digits := str(value)
+	var formatted := ""
+	for index in range(digits.length() - 1, -1, -1):
+		if not formatted.is_empty() and (digits.length() - 1 - index + 1) % 3 == 0:
+			formatted = "," + formatted
+		formatted = digits.substr(index, 1) + formatted
+	return formatted
 
 
 func _draw_label(text: String, position: Vector2, font_size: int, color: Color) -> void:
