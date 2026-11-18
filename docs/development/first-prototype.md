@@ -8,7 +8,7 @@
 - A Godot project with a runnable demo scene configured as the main scene.
 - A renderer-independent data model for provinces and regions.
 - Province adjacency stored as province IDs.
-- Validation for missing IDs, duplicate IDs, invalid region references, invalid adjacency references, self-adjacency, and negative population values.
+- Validation for missing IDs, duplicate IDs, invalid region references, invalid adjacency references, self-adjacency, one-way adjacency, and negative population values.
 - A small six-province sample world stored in JSON.
 - A separate JSON file for the demo's 2D tile layout. This is intentionally not part of the simulation model.
 - A clickable 2D demo that reads the shared world data and displays province information.
