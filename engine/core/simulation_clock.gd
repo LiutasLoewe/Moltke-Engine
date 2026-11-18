@@ -119,6 +119,8 @@ func load_state(state: Dictionary) -> bool:
 	if typeof(raw_paused) != TYPE_BOOL:
 		return false
 
+	var previous_speed := speed_multiplier
+	var previous_pause_state := is_paused
 	simulation_tick = int(raw_tick)
 	year = int(raw_year)
 	month = int(raw_month)
@@ -127,6 +129,10 @@ func load_state(state: Dictionary) -> bool:
 	speed_multiplier = float(raw_speed)
 	is_paused = bool(raw_paused)
 	_accumulator = 0.0
+	if not is_equal_approx(previous_speed, speed_multiplier):
+		speed_changed.emit(speed_multiplier)
+	if previous_pause_state != is_paused:
+		pause_changed.emit(is_paused)
 	return true
 
 
