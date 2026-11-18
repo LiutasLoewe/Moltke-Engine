@@ -24,21 +24,21 @@ The engine is planned around four main areas:
 
 See [docs/architecture/overview.md](docs/architecture/overview.md) for the architecture plan and [docs/architecture/modding-and-scripting.md](docs/architecture/modding-and-scripting.md) for the modding, scripting, and extension-module design.
 
-## First prototype
+## First implementation slice
 
-The repository now contains the first implementation slice:
+The repository contains a Godot 4.7 project and two working foundations:
 
-- a Godot 4.7 project and demo scene;
-- a shared data model for provinces, regions, and province adjacency;
-- JSON sample-world data with validation;
-- a separate 2D demo layout and clickable province viewer;
-- a headless test script for the world-data model.
+- a renderer-independent world model for provinces, regions, ownership, population, and adjacency;
+- a small clickable 2D world-map demo;
+- a fixed-step daily simulation clock with pause controls, speed multipliers, and calendar signals;
+- declarative state-path triggers that emit data events and can be surfaced as pop-ups or decisions by a UI;
+- a versioned JSON save envelope for runtime, trigger, and JSON-compatible game state.
 
-See [docs/development/first-prototype.md](docs/development/first-prototype.md) for run instructions and current limitations.
+The core APIs are under `engine/core/`. See [docs/development/first-prototype.md](docs/development/first-prototype.md) and [the gameplay systems roadmap](docs/development/gameplay-systems-roadmap.md) for current capabilities and next steps.
 
 ## Project status
 
-Moltke-Engine is in early prototype development. The initial world-map data foundation and simple 2D demo are present, but the production 2D renderer, 3D renderer, general module manager, and map editor are not implemented yet. The architecture documentation describes design goals where implementation is still pending.
+Moltke-Engine is in early prototype development. The world-data foundation, simple 2D demo, deterministic tick scheduler, declarative trigger evaluation, and versioned JSON save/load primitives are implemented. Country and diplomacy data models, economic and military simulation, strategic AI, production renderers, data-driven UI, mod loading, editor tooling, and multiplayer are still future work. The architecture documents label these boundaries explicitly.
 
 ## License
 
