@@ -1,6 +1,7 @@
 extends Node2D
 
 const WorldMapDataScript = preload("res://engine/world/world_map_data.gd")
+const CountryRegistryScript = preload("res://engine/modules/countries/country_registry.gd")
 const WORLD_DATA_PATH := "res://examples/world_map_demo/world.json"
 const LAYOUT_PATH := "res://examples/world_map_demo/layout.json"
 
@@ -8,12 +9,13 @@ const BACKGROUND_COLOR := Color(0.055, 0.067, 0.09, 1.0)
 const PANEL_COLOR := Color(0.12, 0.15, 0.19, 1.0)
 const BORDER_COLOR := Color(0.30, 0.36, 0.43, 1.0)
 const OWNER_COLORS := {
-	"north_union": Color(0.22, 0.43, 0.68, 1.0),
-	"eastern_republic": Color(0.24, 0.52, 0.39, 1.0),
-	"western_crown": Color(0.63, 0.40, 0.23, 1.0)
+	"NTH": Color(0.22, 0.43, 0.68, 1.0),
+	"EST": Color(0.24, 0.52, 0.39, 1.0),
+	"WST": Color(0.63, 0.40, 0.23, 1.0)
 }
 
 var _world_map: WorldMapData
+var _country_registry
 var _tiles: Array = []
 var _tile_size := Vector2(350, 165)
 var _map_origin := Vector2(70, 150)
@@ -37,6 +39,13 @@ func _load_demo() -> void:
 	if not _world_map.load_from_dictionary(world_payload):
 		_error_text = "The demo world data failed validation. See the Output panel."
 		for message in _world_map.validation_errors:
+			push_error(message)
+		return
+
+	_country_registry = CountryRegistryScript.new()
+	if not _country_registry.load_from_dictionary(world_payload, _world_map):
+		_error_text = "The demo country data failed validation. See the Output panel."
+		for message in _country_registry.validation_errors:
 			push_error(message)
 		return
 
@@ -168,7 +177,14 @@ func _draw_province_tile(province: ProvinceData, rect: Rect2) -> void:
 	var text_color := Color(0.97, 0.98, 1.0)
 	var detail_color := Color(0.90, 0.93, 0.96)
 	_draw_label(province.name, rect.position + Vector2(18, 38), 22, text_color)
-	_draw_label("Owner: %s" % province.owner_id.replace("_", " ").capitalize(), rect.position + Vector2(18, 78), 15, detail_color)
+	var country = _country_registry.get_country(province.owner_id)
+	var owner_name := country.display_name if country != null else province.owner_id
+	_draw_label(
+		"Owner: %s (%s)" % [owner_name, province.owner_id],
+		rect.position + Vector2(18, 78),
+		15,
+		detail_color
+	)
 	_draw_label("Terrain: %s" % province.terrain_type, rect.position + Vector2(18, 105), 15, detail_color)
 	_draw_label("Population: %s" % _format_population(province.population), rect.position + Vector2(18, 132), 15, detail_color)
 
