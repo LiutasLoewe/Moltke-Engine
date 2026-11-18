@@ -21,3 +21,13 @@ static func from_dictionary(data: Dictionary) -> CountryData:
 		for province_id in raw_cores:
 			country.core_province_ids.append(str(province_id).strip_edges())
 	return country
+
+
+func to_dictionary() -> Dictionary:
+	return {
+		"tag": tag,
+		"display_name": display_name,
+		"government_type_id": government_type_id,
+		"stability": stability,
+		"core_province_ids": core_province_ids.duplicate()
+}
