@@ -39,6 +39,20 @@ func configure(definitions: Array) -> Array[String]:
 			continue
 
 		var definition_valid := true
+		var raw_interval: Variant = definition.get("interval_ticks", 1)
+		if typeof(raw_interval) != TYPE_INT or int(raw_interval) < 1:
+			errors.append("Event %s must use a positive integer interval_ticks." % event_id)
+			definition_valid = false
+		if definition.has("once") and typeof(definition["once"]) != TYPE_BOOL:
+			errors.append("Event %s must use a boolean once value." % event_id)
+			definition_valid = false
+		if definition.has("choices") and not (definition["choices"] is Array):
+			errors.append("Event %s choices must be an array." % event_id)
+			definition_valid = false
+		if definition.has("data") and not (definition["data"] is Dictionary):
+			errors.append("Event %s data must be an object." % event_id)
+			definition_valid = false
+
 		for raw_condition in conditions:
 			if not (raw_condition is Dictionary):
 				errors.append("Event %s contains a condition that is not an object." % event_id)
@@ -105,7 +119,9 @@ func process_tick(tick_index: int, simulation_state: Dictionary) -> void:
 
 
 func drain_pending_events() -> Array[Dictionary]:
-	var result := _pending_events.duplicate(true)
+	var result: Array[Dictionary] = []
+	for event_payload in _pending_events:
+		result.append(event_payload.duplicate(true))
 	_pending_events.clear()
 	return result
 
@@ -140,7 +156,11 @@ func load_state(state: Dictionary) -> bool:
 	for raw_event in raw_pending:
 		if not (raw_event is Dictionary):
 			return false
-		restored_pending.append(raw_event.duplicate(true))
+		var pending_event: Dictionary = raw_event
+		var pending_id := str(pending_event.get("id", ""))
+		if not _definitions.has(pending_id):
+			return false
+		restored_pending.append(pending_event.duplicate(true))
 
 	_fired_event_ids = restored_fired
 	_pending_events = restored_pending
