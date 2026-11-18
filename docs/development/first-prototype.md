@@ -16,6 +16,8 @@
 - A fixed-step daily simulation clock with pause, four speed settings, date progression, and serializable clock state.
 - Declarative event triggers with nested state paths, comparison operators, once/repeating behavior, and queued event payloads.
 - A versioned JSON save envelope and a runtime coordinator that snapshots game state, clock state, and trigger state.
+- A country registry with stable tags, government type IDs, stability, core province references, and province-owner validation.
+- Deterministic Dijkstra pathfinding over province adjacency with integer terrain costs, blocked provinces, and stable tie-breaking.
 
 ## Run the demo
 
@@ -40,7 +42,7 @@ The sample grid is only a demo presentation layout. Province identity, ownership
 ## Not implemented yet
 
 - Polygon-based 2D and 3D terrain renderers, geographic projections, and animated units.
-- Country registries and complete diplomacy, economy, population, military, and political simulation modules.
+- Diplomacy, economy, population, political simulation, and unit/supply/combat systems. The country registry and route-finding algorithm are initial data/algorithm foundations only.
 - Strategic AI, a command/network protocol, multiplayer synchronization, and out-of-sync diagnostics.
 - A production data-driven UI and map/scenario editor.
 - A package/mod loader, Moltke Script parser and interpreter, and developer extension lifecycle.
