@@ -45,9 +45,20 @@ func restore_snapshot(snapshot: Dictionary) -> bool:
 	if not (raw_clock is Dictionary) or not (raw_trigger_events is Dictionary):
 		return false
 
-	if not trigger_events.load_state(raw_trigger_events):
+	var saved_tick: Variant = raw_clock.get("simulation_tick", null)
+	var last_trigger_tick: Variant = raw_trigger_events.get("last_processed_tick", -1)
+	if typeof(saved_tick) != TYPE_INT or typeof(last_trigger_tick) != TYPE_INT:
 		return false
+	if int(last_trigger_tick) > int(saved_tick):
+		return false
+
+	var previous_clock_state: Dictionary = clock.to_state()
+	var previous_trigger_state: Dictionary = trigger_events.to_state()
 	if not clock.load_state(raw_clock):
+		return false
+	if not trigger_events.load_state(raw_trigger_events):
+		clock.load_state(previous_clock_state)
+		trigger_events.load_state(previous_trigger_state)
 		return false
 	simulation_state = raw_simulation_state.duplicate(true)
 	return true
