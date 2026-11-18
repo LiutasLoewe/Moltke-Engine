@@ -10,7 +10,9 @@ The repository currently has:
 - a fixed-step daily clock with calendar progression, pause, and four simulation-speed settings;
 - declarative event checks over nested simulation-state dictionaries;
 - a runtime snapshot containing the clock, trigger state, and caller-owned simulation data;
-- a versioned JSON save envelope for JSON-compatible snapshots.
+- a versioned JSON save envelope for JSON-compatible snapshots;
+- country tags, governments, stability, core province references, and ownership validation;
+- deterministic Dijkstra routes over province adjacency with integer movement costs.
 
 Core entry points:
 
@@ -80,7 +82,7 @@ Keep relation queries separate from treaty application. A peace treaty should be
 
 Represent units by stable IDs, owner, unit type, location, strength, and movement state. Use the existing province adjacency graph for routes. Add terrain, infrastructure, ownership/access, and supply costs as explicit edge data.
 
-Start with deterministic Dijkstra or A* pathfinding. Break equal-cost ties by stable province ID and use integer or fixed-point costs. Resolve movement and combat in a fixed order from a saved random seed or deterministic combat inputs. Supply should be a queryable network calculation with clear limits and caching, not hidden renderer state.
+The first movement foundation is implemented as deterministic Dijkstra routing over the existing adjacency graph. It accepts positive integer terrain costs, blocked provinces, and a cost limit, and breaks ties by stable province IDs. Next, add unit records and movement orders; then access rules, supply, and combat with fixed update order and saved deterministic inputs.
 
 ## 5. Economy and population
 
