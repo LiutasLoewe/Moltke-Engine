@@ -11,7 +11,7 @@ The repository currently has:
 - declarative event checks over nested simulation-state dictionaries;
 - a runtime snapshot containing the clock, trigger state, and caller-owned simulation data;
 - a versioned JSON save envelope for JSON-compatible snapshots;
-- country tags, governments, stability, core province references, and ownership validation;
+- country tags, governments, stability, core province references, ownership validation, and dictionary-based country state serialization;
 - deterministic Dijkstra routes over province adjacency with integer movement costs.
 
 Core entry points:
