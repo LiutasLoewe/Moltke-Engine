@@ -22,7 +22,7 @@ The engine is planned around four main areas:
 3. **Rendering:** separate 2D and 3D presentation layers that consume the shared world model.
 4. **Modules and tools:** optional gameplay systems, game-specific content, and editor tools.
 
-See [docs/architecture/overview.md](docs/architecture/overview.md) for the architecture plan.
+See [docs/architecture/overview.md](docs/architecture/overview.md) for the architecture plan and [docs/architecture/modding-and-scripting.md](docs/architecture/modding-and-scripting.md) for the modding, scripting, and extension-module design.
 
 ## First prototype
 
