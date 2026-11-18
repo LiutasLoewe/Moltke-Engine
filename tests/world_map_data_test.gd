@@ -31,7 +31,7 @@ func _run() -> void:
 		"Adjacency lookup returns two neighbouring provinces."
 	)
 
-	var invalid_payload := {
+	var invalid_region_payload := {
 		"regions": [],
 		"provinces": [
 			{
@@ -42,10 +42,31 @@ func _run() -> void:
 			}
 		]
 	}
-	var invalid_world = WorldMapDataScript.new()
+	var invalid_region_world = WorldMapDataScript.new()
 	_expect(
-		not invalid_world.load_from_dictionary(invalid_payload),
+		not invalid_region_world.load_from_dictionary(invalid_region_payload),
 		"Validation rejects a province that references a missing region."
+	)
+
+	var asymmetric_payload := {
+		"regions": [{"id": "test_region", "name": "Test Region"}],
+		"provinces": [
+			{
+				"id": "a",
+				"region_id": "test_region",
+				"adjacent_province_ids": ["b"]
+			},
+			{
+				"id": "b",
+				"region_id": "test_region",
+				"adjacent_province_ids": []
+			}
+		]
+	}
+	var asymmetric_world = WorldMapDataScript.new()
+	_expect(
+		not asymmetric_world.load_from_dictionary(asymmetric_payload),
+		"Validation rejects one-way province adjacency."
 	)
 
 	_finish()
