@@ -1,4 +1,27 @@
 {
+  "countries": [
+    {
+      "tag": "NTH",
+      "display_name": "North Union",
+      "government_type_id": "council_republic",
+      "stability": 72,
+      "core_province_ids": ["north_coast", "highlands"]
+    },
+    {
+      "tag": "EST",
+      "display_name": "Eastern Republic",
+      "government_type_id": "republic",
+      "stability": 66,
+      "core_province_ids": ["eastmark", "suncoast"]
+    },
+    {
+      "tag": "WST",
+      "display_name": "Western Crown",
+      "government_type_id": "monarchy",
+      "stability": 58,
+      "core_province_ids": ["westhaven", "greenheart"]
+    }
+  ],
   "regions": [
     { "id": "northern_marches", "name": "Northern Marches" },
     { "id": "eastern_reach", "name": "Eastern Reach" },
@@ -8,7 +31,7 @@
     {
       "id": "north_coast",
       "name": "North Coast",
-      "owner_id": "north_union",
+      "owner_id": "NTH",
       "region_id": "northern_marches",
       "terrain_type": "Coastal plains",
       "population": 84000,
@@ -17,7 +40,7 @@
     {
       "id": "highlands",
       "name": "The Highlands",
-      "owner_id": "north_union",
+      "owner_id": "NTH",
       "region_id": "northern_marches",
       "terrain_type": "Hills",
       "population": 56000,
@@ -26,7 +49,7 @@
     {
       "id": "eastmark",
       "name": "Eastmark",
-      "owner_id": "eastern_republic",
+      "owner_id": "EST",
       "region_id": "eastern_reach",
       "terrain_type": "Forest",
       "population": 93000,
@@ -35,7 +58,7 @@
     {
       "id": "westhaven",
       "name": "Westhaven",
-      "owner_id": "western_crown",
+      "owner_id": "WST",
       "region_id": "southern_heartland",
       "terrain_type": "Farmland",
       "population": 72000,
@@ -44,7 +67,7 @@
     {
       "id": "greenheart",
       "name": "Greenheart",
-      "owner_id": "western_crown",
+      "owner_id": "WST",
       "region_id": "southern_heartland",
       "terrain_type": "Plains",
       "population": 120000,
@@ -53,7 +76,7 @@
     {
       "id": "suncoast",
       "name": "Suncoast",
-      "owner_id": "eastern_republic",
+      "owner_id": "EST",
       "region_id": "eastern_reach",
       "terrain_type": "Coastal hills",
       "population": 65000,
