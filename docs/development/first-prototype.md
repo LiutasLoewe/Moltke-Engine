@@ -1,6 +1,6 @@
 # First Prototype: World Map Foundation
 
-**Status:** Initial implementation  
+**Status:** Initial implementation slice  
 **Target editor/runtime:** Godot 4.7.2 stable (the project targets the Godot 4.7 feature series)
 
 ## What exists
@@ -13,6 +13,9 @@
 - A separate JSON file for the demo's 2D tile layout. This is intentionally not part of the simulation model.
 - A clickable 2D demo that reads the shared world data and displays province information.
 - A headless test script for the world data model.
+- A fixed-step daily simulation clock with pause, four speed settings, date progression, and serializable clock state.
+- Declarative event triggers with nested state paths, comparison operators, once/repeating behavior, and queued event payloads.
+- A versioned JSON save envelope and a runtime coordinator that snapshots game state, clock state, and trigger state.
 
 ## Run the demo
 
@@ -36,11 +39,11 @@ The sample grid is only a demo presentation layout. Province identity, ownership
 
 ## Not implemented yet
 
-- A polygon-based 2D province renderer.
-- A 3D terrain or globe renderer.
-- Geographic coordinate systems and projection conversion.
-- The general-purpose module manager and public module API.
-- Map editing and scenario editing tools.
-- Save-game format and simulation tick processing.
+- Polygon-based 2D and 3D terrain renderers, geographic projections, and animated units.
+- Country registries and complete diplomacy, economy, population, military, and political simulation modules.
+- Strategic AI, a command/network protocol, multiplayer synchronization, and out-of-sync diagnostics.
+- A production data-driven UI and map/scenario editor.
+- A package/mod loader, Moltke Script parser and interpreter, and developer extension lifecycle.
+- Save migration, module-owned schema migration, and automatic backup/recovery.
 
 This prototype is a first vertical slice, not a complete strategy engine.
