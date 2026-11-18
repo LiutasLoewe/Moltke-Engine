@@ -21,6 +21,15 @@ func load_from_dictionary(payload: Dictionary, world_map: WorldMapData = null) -
 			validation_errors.append("Every country entry must be an object.")
 			continue
 
+		var raw_cores: Variant = raw_country.get("core_province_ids", [])
+		if not (raw_cores is Array):
+			validation_errors.append("Country core_province_ids must be an array.")
+			continue
+		var raw_stability: Variant = raw_country.get("stability", 50)
+		if typeof(raw_stability) != TYPE_INT:
+			validation_errors.append("Country stability must be an integer from 0 to 100.")
+			continue
+
 		var country: CountryData = CountryData.from_dictionary(raw_country)
 		if not _is_valid_tag(country.tag):
 			validation_errors.append("Country tag '%s' must be 2-8 uppercase letters or digits." % country.tag)
@@ -87,6 +96,18 @@ func get_owned_provinces(tag: String, world_map: WorldMapData) -> Array[Province
 		return left.id < right.id
 	)
 	return result
+
+
+func to_state() -> Dictionary:
+	var country_records: Array[Dictionary] = []
+	for tag in get_country_tags():
+		var country: CountryData = get_country(tag)
+		country_records.append(country.to_dictionary())
+	return {"countries": country_records}
+
+
+func load_state(state: Dictionary, world_map: WorldMapData) -> bool:
+	return load_from_dictionary(state, world_map)
 
 
 func _is_valid_tag(tag: String) -> bool:
