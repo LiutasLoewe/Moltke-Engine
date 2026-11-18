@@ -231,13 +231,30 @@ The folder layout may change as implementation begins. Keep boundaries based on 
 7. Add map editor and scenario tools.
 8. Expand standard gameplay modules and document the public extension API.
 
-## 10. Open design questions
+
+## 11. Modding and scripting
+
+Moltke uses a three-level extension strategy:
+
+1. **Data packages** define game content through validated, human-readable files. JSON is the initial implementation format.
+2. **Moltke Script** is a restricted game-facing language for conditions, effects, events, decisions, and rules. It runs through an allow-listed interpreter and is not a general-purpose systems language.
+3. **Developer extension modules** add new simulation systems, map modes, editor tools, or optimized functionality. GDScript is the first planned extension route; native Godot GDExtension support can follow after the public API stabilizes.
+
+Game packages, content packages, and executable extension modules are distinct concepts. A game enables only the modules it requires.
+
+Simulation scripts and modules should read through query interfaces and request state changes through validated commands. The core applies commands at controlled simulation boundaries and publishes events for other systems. This supports diagnostics, repeatable tests, and a future deterministic multiplayer model.
+
+Executable GDScript and native extensions run inside the game process and must be treated as trusted code. The restricted Moltke Script interpreter is the intended route for ordinary mods that should not have arbitrary engine access.
+
+See [Modding and Scripting Architecture](modding-and-scripting.md) for package manifests, module lifecycle, API boundaries, trust model, and implementation milestones.
+
+## 12. Open design questions
 
 The following should be decided through prototypes rather than prematurely fixed:
 
 - final map geometry and source asset format;
 - supported 2D projections and whether/when to add a globe;
-- exact module scripting and extension API;
+- final Moltke Script grammar and extension API details;
 - save-game compatibility and module version migration;
 - deterministic simulation requirements and multiplayer scope;
 - boundaries between Godot scripts and any future native performance-critical code.
