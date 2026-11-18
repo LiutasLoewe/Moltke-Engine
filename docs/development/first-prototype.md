@@ -1,7 +1,7 @@
 # First Prototype: World Map Foundation
 
 **Status:** Initial implementation  
-**Target editor/runtime:** Godot 4.7.x (the project was scaffolded against the 4.7 stable series)
+**Target editor/runtime:** Godot 4.7.2 stable (the project targets the Godot 4.7 feature series)
 
 ## What exists
 
@@ -16,7 +16,7 @@
 
 ## Run the demo
 
-1. Install the Godot 4.7 stable editor.
+1. Install Godot 4.7.2 stable or a compatible later 4.7 patch release.
 2. Open the repository folder containing `project.godot`.
 3. Run the project (F6/F5 from the editor, or the Run Project command).
 
