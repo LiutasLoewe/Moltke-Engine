@@ -107,9 +107,10 @@ func _validate_references() -> void:
 
 		var seen_adjacencies: Dictionary = {}
 		for adjacent_id in province.adjacent_province_ids:
+			var already_seen: bool = seen_adjacencies.has(adjacent_id)
 			if adjacent_id == province.id:
 				validation_errors.append("Province %s cannot be adjacent to itself." % province.id)
-			elif seen_adjacencies.has(adjacent_id):
+			elif already_seen:
 				validation_errors.append(
 					"Province %s lists adjacent province %s more than once." % [province.id, adjacent_id]
 				)
@@ -117,4 +118,11 @@ func _validate_references() -> void:
 				validation_errors.append(
 					"Province %s references unknown adjacent province %s." % [province.id, adjacent_id]
 				)
+			else:
+				var adjacent_province: ProvinceData = provinces[adjacent_id] as ProvinceData
+				if not adjacent_province.adjacent_province_ids.has(province.id):
+					validation_errors.append(
+						"Adjacency between %s and %s must be declared in both directions."
+						% [province.id, adjacent_id]
+					)
 			seen_adjacencies[adjacent_id] = true
