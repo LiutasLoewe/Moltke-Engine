@@ -268,8 +268,8 @@ The following should be decided through prototypes rather than prematurely fixed
 | Core clock | Implemented: a fixed daily tick, Gregorian date progression, pause, 1×/2×/4×/8× scheduling speeds, and serializable clock state. |
 | Events and triggers | Implemented: JSON-like definitions, nested dictionary paths, comparisons, one-shot or repeating checks, and event payload queues. UI pop-ups and player decisions are not implemented. |
 | Save/load | Implemented: versioned JSON envelope for JSON-compatible snapshots. Runtime, trigger, and game state can be assembled into one snapshot. Migration, recovery, and module-specific compatibility checks are future work. |
-| Countries and actors | Partial foundation only: province ownership is an ID. Country tags, governments, cores, stability, and actor lifecycle are not implemented. |
-| Diplomacy, military, economy, and population | Planned optional gameplay modules. |
+| Countries and actors | Initial data foundation implemented: country tags, government IDs, stability, core province IDs, ownership validation, and owned-province lookup. Actor lifecycle and political mechanics remain future work. |
+| Diplomacy, units, supply, combat, economy, and population | Planned optional gameplay modules. Deterministic Dijkstra routing over province adjacency is implemented as a movement foundation. |
 | Strategic AI | Planned. Deterministic tick scheduling and state boundaries are prerequisites, not an AI implementation. |
 | Rendering and UI | Prototype only: six clickable tiles. Production geometry, map modes, unit animation, and data-driven tables/tooltips remain planned. |
 | Modding and tooling | Architecture documented. The package loader, Moltke Script interpreter, extension lifecycle, map editor, and scenario editor remain planned. |
