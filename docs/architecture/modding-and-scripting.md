@@ -2,7 +2,7 @@
 
 **Status:** Architecture decision / design target  
 **Selected direction:** Data-driven content + Moltke Script + developer extension modules  
-**Implementation status:** Planned; not implemented yet.
+**Implementation status:** The fixed-step clock, declarative trigger evaluation, and JSON save primitives are implemented in the core. The package loader, Moltke Script, and developer extension lifecycle remain planned.
 
 ## 1. Goals
 
