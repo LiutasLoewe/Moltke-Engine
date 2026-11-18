@@ -176,10 +176,12 @@ func _draw_province_tile(province: ProvinceData, rect: Rect2) -> void:
 func _format_population(value: int) -> String:
 	var digits := str(value)
 	var formatted := ""
+	var processed_digits := 0
 	for index in range(digits.length() - 1, -1, -1):
-		if not formatted.is_empty() and (digits.length() - 1 - index + 1) % 3 == 0:
+		if processed_digits > 0 and processed_digits % 3 == 0:
 			formatted = "," + formatted
 		formatted = digits.substr(index, 1) + formatted
+		processed_digits += 1
 	return formatted
 
 
