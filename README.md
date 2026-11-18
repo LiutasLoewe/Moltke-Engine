@@ -26,7 +26,7 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the archi
 
 ## First implementation slice
 
-The repository contains a Godot 4.7 project and two working foundations:
+The repository contains a Godot 4.7 project with these working foundations:
 
 - a renderer-independent world model for provinces, regions, ownership, population, and adjacency;
 - a small clickable 2D world-map demo;
