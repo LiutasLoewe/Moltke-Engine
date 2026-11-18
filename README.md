@@ -22,11 +22,23 @@ The engine is planned around four main areas:
 3. **Rendering:** separate 2D and 3D presentation layers that consume the shared world model.
 4. **Modules and tools:** optional gameplay systems, game-specific content, and editor tools.
 
-See [docs/architecture/overview.md](docs/architecture/overview.md) for the current architecture plan.
+See [docs/architecture/overview.md](docs/architecture/overview.md) for the architecture plan.
+
+## First prototype
+
+The repository now contains the first implementation slice:
+
+- a Godot 4.7 project and demo scene;
+- a shared data model for provinces, regions, and province adjacency;
+- JSON sample-world data with validation;
+- a separate 2D demo layout and clickable province viewer;
+- a headless test script for the world-data model.
+
+See [docs/development/first-prototype.md](docs/development/first-prototype.md) for run instructions and current limitations.
 
 ## Project status
 
-Moltke-Engine is in the planning and early foundation stage. The architecture described in the documentation is a design target, not a claim that these systems are already implemented.
+Moltke-Engine is in early prototype development. The initial world-map data foundation and simple 2D demo are present, but the production 2D renderer, 3D renderer, general module manager, and map editor are not implemented yet. The architecture documentation describes design goals where implementation is still pending.
 
 ## License
 

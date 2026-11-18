@@ -1,0 +1,14 @@
+{
+  "description": "Demo-only 2D tile layout. This visual arrangement is deliberately kept outside the shared world simulation data.",
+  "tile_size": [350, 165],
+  "origin": [70, 150],
+  "gap": [14, 14],
+  "tiles": [
+    { "province_id": "north_coast", "grid": [0, 0] },
+    { "province_id": "highlands", "grid": [1, 0] },
+    { "province_id": "eastmark", "grid": [2, 0] },
+    { "province_id": "westhaven", "grid": [0, 1] },
+    { "province_id": "greenheart", "grid": [1, 1] },
+    { "province_id": "suncoast", "grid": [2, 1] }
+  ]
+}

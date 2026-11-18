@@ -1,0 +1,63 @@
+{
+  "regions": [
+    { "id": "northern_marches", "name": "Northern Marches" },
+    { "id": "eastern_reach", "name": "Eastern Reach" },
+    { "id": "southern_heartland", "name": "Southern Heartland" }
+  ],
+  "provinces": [
+    {
+      "id": "north_coast",
+      "name": "North Coast",
+      "owner_id": "north_union",
+      "region_id": "northern_marches",
+      "terrain_type": "Coastal plains",
+      "population": 84000,
+      "adjacent_province_ids": ["highlands", "westhaven"]
+    },
+    {
+      "id": "highlands",
+      "name": "The Highlands",
+      "owner_id": "north_union",
+      "region_id": "northern_marches",
+      "terrain_type": "Hills",
+      "population": 56000,
+      "adjacent_province_ids": ["north_coast", "eastmark", "greenheart"]
+    },
+    {
+      "id": "eastmark",
+      "name": "Eastmark",
+      "owner_id": "eastern_republic",
+      "region_id": "eastern_reach",
+      "terrain_type": "Forest",
+      "population": 93000,
+      "adjacent_province_ids": ["highlands", "suncoast"]
+    },
+    {
+      "id": "westhaven",
+      "name": "Westhaven",
+      "owner_id": "western_crown",
+      "region_id": "southern_heartland",
+      "terrain_type": "Farmland",
+      "population": 72000,
+      "adjacent_province_ids": ["north_coast", "greenheart"]
+    },
+    {
+      "id": "greenheart",
+      "name": "Greenheart",
+      "owner_id": "western_crown",
+      "region_id": "southern_heartland",
+      "terrain_type": "Plains",
+      "population": 120000,
+      "adjacent_province_ids": ["highlands", "westhaven", "suncoast"]
+    },
+    {
+      "id": "suncoast",
+      "name": "Suncoast",
+      "owner_id": "eastern_republic",
+      "region_id": "eastern_reach",
+      "terrain_type": "Coastal hills",
+      "population": 65000,
+      "adjacent_province_ids": ["eastmark", "greenheart"]
+    }
+  ]
+}
