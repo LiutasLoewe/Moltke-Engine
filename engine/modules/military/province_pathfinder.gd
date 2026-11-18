@@ -17,9 +17,9 @@ static func find_path(
 		return {"found": false, "path": [], "cost": 0, "error": "Start or goal province does not exist."}
 	if start_id == goal_id:
 		return {"found": true, "path": [start_id], "cost": 0, "error": ""}
-	if not options.get("terrain_costs", {}) is Dictionary:
+	if not (options.get("terrain_costs", {}) is Dictionary):
 		return {"found": false, "path": [], "cost": 0, "error": "terrain_costs must be an object."}
-	if not options.get("blocked_province_ids", []) is Array:
+	if not (options.get("blocked_province_ids", []) is Array):
 		return {"found": false, "path": [], "cost": 0, "error": "blocked_province_ids must be an array."}
 
 	var terrain_costs: Dictionary = options.get("terrain_costs", {})
@@ -90,7 +90,7 @@ static func _heap_push(heap: Array[Dictionary], item: Dictionary) -> void:
 	heap.append(item)
 	var index := heap.size() - 1
 	while index > 0:
-		var parent := (index - 1) / 2
+		var parent := (index - 1) >> 1
 		if not _has_higher_priority(heap[index], heap[parent]):
 			break
 		var temporary: Dictionary = heap[parent]
