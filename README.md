@@ -32,13 +32,15 @@ The repository contains a Godot 4.7 project and two working foundations:
 - a small clickable 2D world-map demo;
 - a fixed-step daily simulation clock with pause controls, speed multipliers, and calendar signals;
 - declarative state-path triggers that emit data events and can be surfaced as pop-ups or decisions by a UI;
-- a versioned JSON save envelope for runtime, trigger, and JSON-compatible game state.
+- a versioned JSON save envelope for runtime, trigger, and JSON-compatible game state;
+- country tags, government IDs, stability, core provinces, and ownership-reference validation;
+- deterministic Dijkstra pathfinding over province adjacency with integer terrain costs and stable tie-breaking.
 
 The core APIs are under `engine/core/`. See [docs/development/first-prototype.md](docs/development/first-prototype.md) and [the gameplay systems roadmap](docs/development/gameplay-systems-roadmap.md) for current capabilities and next steps.
 
 ## Project status
 
-Moltke-Engine is in early prototype development. The world-data foundation, simple 2D demo, deterministic tick scheduler, declarative trigger evaluation, and versioned JSON save/load primitives are implemented. Country and diplomacy data models, economic and military simulation, strategic AI, production renderers, data-driven UI, mod loading, editor tooling, and multiplayer are still future work. The architecture documents label these boundaries explicitly.
+Moltke-Engine is in early prototype development. The world-data foundation, country registry, deterministic province pathfinding, simple 2D demo, tick scheduler, declarative trigger evaluation, and versioned JSON save/load primitives are implemented. Diplomacy, unit/supply/combat simulation, economy and population, strategic AI, production renderers, data-driven UI, mod loading, editor tooling, and multiplayer are still future work. The architecture documents label these boundaries explicitly.
 
 ## License
 
