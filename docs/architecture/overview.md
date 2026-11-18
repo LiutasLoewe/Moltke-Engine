@@ -1,7 +1,7 @@
 # Moltke-Engine Architecture Overview
 
-**Status:** Initial architecture proposal  
-**Implementation status:** Planned; the components below are design targets, not implemented features.
+**Status:** Architecture overview with implemented core foundation  
+**Implementation status:** The world-data prototype and initial fixed-step clock, declarative trigger system, and versioned JSON save primitives are implemented. Other systems below remain design targets unless explicitly marked implemented.
 
 ## 1. Goals and principles
 
@@ -258,3 +258,30 @@ The following should be decided through prototypes rather than prematurely fixed
 - save-game compatibility and module version migration;
 - deterministic simulation requirements and multiplayer scope;
 - boundaries between Godot scripts and any future native performance-critical code.
+
+
+## 13. Current implementation status
+
+| Area | Status |
+|---|---|
+| World model | Implemented: provinces, regions, ownership IDs, population values, adjacency, validation, and a small 2D data viewer. |
+| Core clock | Implemented: a fixed daily tick, Gregorian date progression, pause, 1×/2×/4×/8× scheduling speeds, and serializable clock state. |
+| Events and triggers | Implemented: JSON-like definitions, nested dictionary paths, comparisons, one-shot or repeating checks, and event payload queues. UI pop-ups and player decisions are not implemented. |
+| Save/load | Implemented: versioned JSON envelope for JSON-compatible snapshots. Runtime, trigger, and game state can be assembled into one snapshot. Migration, recovery, and module-specific compatibility checks are future work. |
+| Countries and actors | Partial foundation only: province ownership is an ID. Country tags, governments, cores, stability, and actor lifecycle are not implemented. |
+| Diplomacy, military, economy, and population | Planned optional gameplay modules. |
+| Strategic AI | Planned. Deterministic tick scheduling and state boundaries are prerequisites, not an AI implementation. |
+| Rendering and UI | Prototype only: six clickable tiles. Production geometry, map modes, unit animation, and data-driven tables/tooltips remain planned. |
+| Modding and tooling | Architecture documented. The package loader, Moltke Script interpreter, extension lifecycle, map editor, and scenario editor remain planned. |
+| Multiplayer | Planned. The current simulation can advance in fixed ticks, but there is no authoritative command log, state checksum protocol, or network transport. |
+
+### Recommended implementation order
+
+1. Define stable country/actor records and typed simulation commands.
+2. Apply commands at tick boundaries and publish validated state-change events.
+3. Add save compatibility metadata and migrations for content and module schemas.
+4. Implement small optional gameplay modules, starting with country administration and economy.
+5. Add movement and deterministic pathfinding over the existing adjacency graph, then military and diplomacy.
+6. Add repeatable AI scheduling and profiling before optimizing late-game workloads.
+7. Build production map/UI tooling and the data package pipeline on top of stable simulation APIs.
+8. Use command logs and state hashes as the basis for multiplayer synchronization after single-player determinism is verified.
