@@ -1,0 +1,11 @@
+[package]
+name = "moltke-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Renderer-independent deterministic simulation foundations for Moltke Engine"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

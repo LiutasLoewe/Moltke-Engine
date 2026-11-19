@@ -1,47 +1,42 @@
-# Moltke-Engine
+# Moltke Engine
 
-Moltke-Engine is an independent, open-source, modular strategy and simulation engine built with Godot as its initial technical foundation.
+Moltke is an independent, open-source foundation for grand-strategy and world-simulation games. The project is restarting as a Rust workspace, with a deterministic simulation core and Lua as its planned gameplay scripting language.
 
-It is designed for developers creating historical, fantasy, science-fiction, economic, political, and other simulation games. Each game can choose a 2D or 3D presentation while using the same underlying world and simulation data.
+This is an early foundation, not a production-ready replacement for a mature game engine. The goal is a focused strategy engine: reusable simulation, world data, modding, and strategy-game tooling. Moltke will not reimplement every general-purpose feature of Godot.
 
-## Design goals
+## Current foundation
 
-- **Modular simulation:** Games enable only the systems they need, such as economy, diplomacy, population, military, politics, or research.
-- **Extensible architecture:** Developers can add custom modules through documented interfaces, dependencies, and events.
-- **Shared world model:** Provinces, regions, ownership, population, and other simulation data are independent of visual presentation.
-- **2D and 3D support:** Games can use a 2D map renderer or a 3D world renderer without duplicating simulation data.
-- **Data-driven content:** Game definitions and scenarios should be configurable through data files rather than hard-coded into the engine.
-- **Editor tooling:** The long-term goal includes tools for creating maps, provinces, regions, and scenarios.
+- Fixed-step simulation advanced explicitly by integer ticks; the host controls pause and wall-clock speed.
+- Ordered player commands, applied in a stable order at their scheduled tick.
+- Integer IDs, ordered maps, and a small seeded PRNG to support repeatable simulation.
+- Initial country and province state, with ownership and stability commands.
+- Versioned JSON save and load for simulation state and pending commands, with validation on load.
+- A separate Lua 5.4 crate using Rust bindings, a safe standard-library subset, memory limits, and an instruction budget.
 
-## Architecture
+The simulation core has no renderer dependency. UI, map rendering, editor tooling, and the choice of a general-purpose rendering framework remain separate decisions.
 
-The engine is planned around four main areas:
+## Workspace
 
-1. **Core:** simulation lifecycle, time, events, data management, and module management.
-2. **World model:** provinces, regions, geography, map geometry, and world queries.
-3. **Rendering:** separate 2D and 3D presentation layers that consume the shared world model.
-4. **Modules and tools:** optional gameplay systems, game-specific content, and editor tools.
+- crates/moltke-core: deterministic simulation primitives, world state, commands, and saves.
+- crates/moltke-modding: constrained Lua runtime foundation.
+- docs/architecture/overview.md: architecture boundaries and determinism rules.
+- docs/architecture/modding-and-scripting.md: the agreed data-plus-Lua modding direction.
+- docs/development/roadmap.md: staged development plan.
 
-See [docs/architecture/overview.md](docs/architecture/overview.md) for the architecture plan and [docs/architecture/modding-and-scripting.md](docs/architecture/modding-and-scripting.md) for the modding, scripting, and extension-module design.
+## Build
 
-## First implementation slice
+Requires Rust 1.85 or newer. From the repository root:
 
-The repository contains a Godot 4.7 project with these working foundations:
+```sh
+cargo build --workspace
+```
 
-- a renderer-independent world model for provinces, regions, ownership, population, and adjacency;
-- a small clickable 2D world-map demo;
-- a fixed-step daily simulation clock with pause controls, speed multipliers, and calendar signals;
-- declarative state-path triggers that emit data events and can be surfaced as pop-ups or decisions by a UI;
-- a versioned JSON save envelope for runtime, trigger, and JSON-compatible game state;
-- country tags, government IDs, stability, core provinces, and ownership-reference validation;
-- deterministic Dijkstra pathfinding over province adjacency with integer terrain costs and stable tie-breaking.
-
-The core APIs are under `engine/core/`. See [docs/development/first-prototype.md](docs/development/first-prototype.md) and [the gameplay systems roadmap](docs/development/gameplay-systems-roadmap.md) for current capabilities and next steps.
+Lua 5.4 is built from source through the vendored mlua feature, so a separate system Lua installation is not required.
 
 ## Project status
 
-Moltke-Engine is in early prototype development. The world-data foundation, country registry, deterministic province pathfinding, simple 2D demo, tick scheduler, declarative trigger evaluation, and versioned JSON save/load primitives are implemented. Diplomacy, unit/supply/combat simulation, economy and population, strategic AI, production renderers, data-driven UI, mod loading, editor tooling, and multiplayer are still future work. The architecture documents label these boundaries explicitly.
+This restart replaces the previous Godot prototype. Diplomacy, economy, populations, military, AI, event triggers, map rendering, editor tooling, and multiplayer are future work. Determinism and a renderer-independent simulation boundary are foundational constraints, not a claim that those systems are already complete.
 
 ## License
 
-Moltke-Engine is licensed under the Mozilla Public License 2.0 (MPL-2.0). See [LICENSE](LICENSE).
+Moltke Engine is licensed under the Mozilla Public License 2.0. See [LICENSE](LICENSE).

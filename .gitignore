@@ -1,5 +1,4 @@
-.godot/
-.export/
-export.cfg
-export_presets.cfg
-*.tmp
+/target/
+**/*.rs.bk
+*.swp
+.DS_Store
