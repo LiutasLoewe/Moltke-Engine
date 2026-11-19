@@ -2,9 +2,9 @@
 
 ## Direction
 
-Moltke is a domain-specific strategy simulation engine written in Rust. It is being built from a clean slate around the needs of grand-strategy games: large world state, fixed simulation ticks, data-driven content, modding, and deterministic command processing.
+Moltke is a domain-specific strategy simulation engine written in Rust. It is built around the needs of grand-strategy games: large world state, fixed simulation ticks, data-driven content, modding, and deterministic command processing.
 
-The project does not aim to reproduce a general-purpose engine such as Godot in Rust. That would duplicate rendering, audio, asset import, physics, and editor systems that are not unique to strategy games. The simulation stays independent of the eventual renderer and editor. We will evaluate a Rust rendering framework when the simulation and map-data needs are clearer.
+The simulation stays independent of the eventual renderer and editor. Rendering, audio, asset import, physics, and general-purpose editor features are outside the strategy simulation core. We will evaluate Rust rendering frameworks when the map and UI needs are clearer.
 
 ## Layers
 
