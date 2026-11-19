@@ -1,4 +1,7 @@
-use crate::{CountryId, CountryTag, DeterministicRng, ProvinceId, Tick};
+use crate::{
+    CountryId, CountryTag, DeterministicRng, GraphError, MapGraph, ModifierError, ModifierSet,
+    ProvinceId, Tick,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -24,6 +27,8 @@ pub struct WorldState {
     pub(crate) rng: DeterministicRng,
     pub(crate) countries: BTreeMap<CountryId, Country>,
     pub(crate) provinces: BTreeMap<ProvinceId, Province>,
+    pub(crate) map: MapGraph,
+    pub(crate) modifiers: ModifierSet,
 }
 
 impl WorldState {
@@ -33,6 +38,8 @@ impl WorldState {
             rng: DeterministicRng::seeded(seed),
             countries: BTreeMap::new(),
             provinces: BTreeMap::new(),
+            map: MapGraph::default(),
+            modifiers: ModifierSet::default(),
         }
     }
 
@@ -56,12 +63,19 @@ impl WorldState {
         &self.provinces
     }
 
+    pub fn map_graph(&self) -> &MapGraph { &self.map }
+    pub fn map_graph_mut(&mut self) -> &mut MapGraph { &mut self.map }
+    pub fn modifiers(&self) -> &ModifierSet { &self.modifiers }
+    pub fn modifiers_mut(&mut self) -> &mut ModifierSet { &mut self.modifiers }
+
     /// Draws from the world's serialized deterministic random stream.
     pub fn random_u64(&mut self) -> u64 {
         self.rng.next_u64()
     }
 
     pub fn validate(&self) -> Result<(), StateValidationError> {
+        self.map.validate().map_err(StateValidationError::Graph)?;
+        self.modifiers.validate().map_err(StateValidationError::Modifiers)?;
         let mut tags = std::collections::BTreeSet::new();
 
         for (id, country) in &self.countries {
@@ -98,6 +112,8 @@ pub enum StateValidationError {
     InvalidCountryTag(CountryId),
     DuplicateCountryTag(String),
     StabilityOutOfRange(CountryId),
+    Graph(GraphError),
+    Modifiers(ModifierError),
     MissingProvinceOwner {
         province_id: ProvinceId,
         country_id: CountryId,
