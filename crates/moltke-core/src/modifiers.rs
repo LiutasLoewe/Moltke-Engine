@@ -63,6 +63,7 @@ struct CacheKey { target: EntityId, stat: StatId, base: Fixed }
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ModifierSet {
     modifiers: BTreeMap<ModifierId, Modifier>,
+    #[serde(default)]
     by_target_stat: BTreeMap<(EntityId, StatId), BTreeSet<ModifierId>>,
     #[serde(skip, default)]
     cache_tick: Option<Tick>,
