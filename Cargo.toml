@@ -1,13 +1,24 @@
 [workspace]
 resolver = "3"
-members = ["crates/moltke-core", "crates/moltke-modding"]
+members = [
+    "crates/moltke-core",
+    "crates/moltke-modding",
+    "crates/moltke-content",
+    "crates/moltke-events",
+    "crates/moltke-map",
+    "crates/moltke-ai",
+    "crates/moltke-gameplay",
+    "crates/moltke-presentation",
+]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MPL-2.0"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
+image = { version = "0.25", default-features = false, features = ["png", "bmp"] }

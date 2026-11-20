@@ -1,0 +1,12 @@
+[package]
+name = "moltke-events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Deterministic event, trigger, and player-decision runtime for Moltke Engine"
+
+[dependencies]
+moltke-content = { path = "../moltke-content" }
+moltke-core = { path = "../moltke-core" }
+serde.workspace = true

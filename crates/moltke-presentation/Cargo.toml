@@ -1,0 +1,10 @@
+[package]
+name = "moltke-presentation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+moltke-core = { path = "../moltke-core" }
+serde.workspace = true

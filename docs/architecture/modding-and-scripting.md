@@ -1,30 +1,68 @@
 # Modding and scripting
 
-The project keeps the earlier decision to support both structured content and a scripting language.
+Moltke uses both structured content and Lua 5.4. TOML defines package manifests, game data, event definitions, and UI layouts. Lua supplies behavior. Rust remains the trusted engine and host API.
 
-## Content formats
+## Package loading
 
-- Structured text files define stable content: country and province definitions, map metadata, scenarios, resources, units, buildings, and event data.
-- Lua 5.4 handles behavior that benefits from logic: scripted triggers, event effects, decisions, AI rules, and module extensions.
-- Rust defines the engine and trusted host APIs. A mod should not need a Rust compiler for ordinary content or event logic.
+`moltke-content` validates IDs and manifest structure, resolves transitive dependencies in deterministic topological order, and mounts packages into a virtual filesystem. Requested mod order breaks ties; later packages override earlier files. Every override records both source IDs. Directory loading is sorted and rejects symbolic links. Content paths are ASCII, slash-separated, and reject traversal segments.
 
-The exact structured format and manifest schema will be chosen when the loader is implemented. Keep formats versioned and validate them with useful file-and-line diagnostics.
+Localization is key-based. Later package values override earlier ones; resolution checks the requested locale, then the game fallback locale, then returns the key so missing translations remain visible.
 
-## Why Lua
+## Lua simulation API
 
-Lua is a small, established embeddable language with a familiar syntax and a broad history in game scripting. The Rust mlua crate provides maintained bindings and supports embedding Lua 5.4. This gives mod authors a recognizable language without making the simulation core depend on a renderer or a custom language.
+`LuaSandbox::execute_commands` creates a fresh VM, installs a read-only `snapshot` table containing the current tick, countries, provinces, and ordered generic entities, and evaluates a chunk that returns an array of command tables. The host converts only supported command kinds to `CommandAction` values and assigns the target tick and deterministic sequence numbers. Callers schedule the returned vector atomically with `Simulation::schedule_commands`.
 
-## Safety and multiplayer constraints
+Example:
 
-The initial runtime loads only the safe standard-library subset and caps memory and instructions per chunk. The current crate does not expose the simulation state to scripts.
+```lua
+return {
+  {
+    kind = "set_country_stability",
+    country_id = 1,
+    stability_bp = 6500
+  },
+  {
+    kind = "add_modifier",
+    modifier_id = 42,
+    target_entity_id = 1,
+    stat = "tax_income",
+    modifier_kind = "multiplicative",
+    value_raw = 11000,
+    source = "event.frontier_market",
+    expires_at_tick = 120
+  }
+}
+```
 
-When the host API is added:
+Supported command kinds include `add_country`, `add_province`, `transfer_province`, `set_country_stability`, `set_stat`, `add_modifier`, `create_entity`, entity tag changes, and typed component-field updates. Component values are integers, fixed-point values, booleans, text, or references to existing entities. Unknown kinds, invalid identifiers, invalid numeric values, overlong result arrays, memory exhaustion, and instruction-budget exhaustion fail before commands are returned.
 
-- Expose narrow, documented functions that build validated commands; do not give scripts mutable access to internal state.
-- Keep filesystem, process, operating-system, network, debug, and native-module access unavailable by default.
-- Disable implicit math.random; provide only a simulation-seeded random stream if a gameplay use case requires it.
-- Require multiplayer-relevant scripts to use integer/fixed-point rules and stable iteration. Wall-clock time, host locale, unordered iteration, and external data must not affect authoritative results.
-- Include script and content hashes in saves and multiplayer compatibility checks.
-- Treat mods as untrusted input. VM limits reduce risk but are not a substitute for auditing host functions and validating every command.
+`examples/scripts/generic_entities.lua` shows how a game can create a tagged actor and attach genre-specific identity and government fields without adding engine code.
 
-Lua code that does not meet deterministic multiplayer rules may still be suitable for offline UI or editor tools, but it must not alter authoritative state in a lockstep session.
+## Events
+
+`moltke-events` parses TOML event catalogs. Trigger expressions use the core `TriggerExpr` schema; event definitions provide a recipient, options, localization keys, once/cooldown policy, and command effects. An optional `mean_time_to_happen_ticks = N` applies a deterministic seeded 1/N hazard on each eligible tick after the trigger is true. The host evaluates catalog entries in sorted event-ID order, so the random stream remains stable. Opening an event and resolving a player choice are scheduled core commands, so pending choices, cooldowns, and once-only status survive saves and replay.
+
+Example trigger encoding:
+
+```toml
+[[events]]
+id = "frontier_market"
+recipient = 1
+once = true
+trigger = { op = "stat_compare", args = { entity = 10, stat = "stability", comparison = "less", value = 2500 } }
+
+[[events.options]]
+id = "charter"
+localization_key = "event.frontier_market.charter"
+effects = [{ SetCountryStability = { country_id = 1, stability_bp = 6500 } }]
+```
+
+Event effects are queued in option order and share the same target tick. Failures appear in command outcomes; scripts cannot mutate the world directly.
+
+## Safety and determinism
+
+- Lua uses `mlua` with Lua 5.4, a memory cap, an instruction budget, and no implicit `math.random`/`math.randomseed`.
+- Simulation script chunks use isolated VMs; persistent Lua globals cannot leak across runs.
+- Filesystem, process, operating-system, network, debug, and native-module access are not part of the host API.
+- Host code must validate every command and must not expose mutable core references.
+- The current Lua snapshot is intentionally small. Mod-controlled AI, UI extensions, on-actions, hot reload, full content hashing, and multiplayer script compatibility are still unimplemented.

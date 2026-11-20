@@ -1,8 +1,10 @@
-use crate::simulation::LoadValidationError;
 use crate::Simulation;
 use serde::{Deserialize, Serialize};
 
-const SAVE_FORMAT_VERSION: u32 = 3;
+const SAVE_FORMAT_VERSION: u32 = 6;
+const SAVE_FORMAT_V3: u32 = 3;
+const SAVE_FORMAT_V4: u32 = 4;
+const SAVE_FORMAT_V5: u32 = 5;
 const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Serialize, Deserialize)]
@@ -30,13 +32,22 @@ impl Simulation {
     /// Loads a save only after checking its format version and state invariants.
     pub fn from_save_json(source: &str) -> Result<Self, SaveError> {
         let mut envelope: SaveEnvelope = serde_json::from_str(source).map_err(SaveError::Json)?;
-        if envelope.format_version != SAVE_FORMAT_VERSION {
+        if !matches!(
+            envelope.format_version,
+            SAVE_FORMAT_V3 | SAVE_FORMAT_V4 | SAVE_FORMAT_V5 | SAVE_FORMAT_VERSION
+        ) {
             return Err(SaveError::UnsupportedFormat(envelope.format_version));
         }
-        envelope.simulation
+        // Version 4 adds event runtime state; version 5 adds the game calendar;
+        // version 6 adds generic entities. Older saves deserialize with default
+        // values for newer fields and upgrade when next written.
+        envelope
+            .simulation
             .rebuild_derived_indexes()
             .map_err(|error| SaveError::InvalidState(format!("{error:?}")))?;
-        envelope.simulation.validate_loaded()
+        envelope
+            .simulation
+            .validate_loaded()
             .map_err(|error| SaveError::InvalidState(format!("{error:?}")))?;
         Ok(envelope.simulation)
     }

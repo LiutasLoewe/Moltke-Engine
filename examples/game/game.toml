@@ -1,0 +1,4 @@
+id = "moltke.history-demo"
+version = "0.1.0"
+base_locale = "en-US"
+modules = ["diplomacy", "economy", "military", "population"]

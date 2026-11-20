@@ -2,30 +2,29 @@
 
 ## Direction
 
-Moltke is a domain-specific strategy simulation engine written in Rust. It is built around the needs of grand-strategy games: large world state, fixed simulation ticks, data-driven content, modding, and deterministic command processing.
+Moltke is an independent, genre-agnostic strategy simulation engine written in Rust. Games define whether their entities represent countries, factions, corporations, species, provinces, or star systems. Engine state is authoritative; renderers and tools consume snapshots and submit commands.
 
-The simulation stays independent of the eventual renderer and editor. Rendering, audio, asset import, physics, and general-purpose editor features are outside the strategy simulation core. We will evaluate Rust rendering frameworks when the map and UI needs are clearer.
+## Workspace layers
 
-## Layers
+1. `moltke-core` owns integer ticks, ordered commands, world state, generic tagged entities with typed component fields, graph primitives, fixed-point stats/modifiers, event runtime state, saves, replay, and diagnostic state hashes.
+2. `moltke-content` parses TOML, resolves package dependencies, mounts layered virtual files, and resolves localization keys.
+3. `moltke-modding` runs isolated Lua 5.4 chunks against read-only simulation snapshots and converts returned tables into typed commands.
+4. `moltke-events` validates data-defined triggers/options and schedules open/resolve commands. Pending choices and cooldowns live in core save state.
+5. `moltke-map` converts RGB region rasters and heightmaps to core graphs and provides deterministic seeded grid generation.
+6. `moltke-gameplay` contains optional diplomacy, economy, population, and military-movement state. `Campaign::advance_tick` plans fallible economy work, evaluates events, advances core commands, then commits gameplay phases. `moltke-ai` ranks independent utility candidates and emits stable command sequences.
+7. `moltke-presentation` builds ordered, immutable map snapshots from a generic graph and explicit tag-driven map-mode definitions. Its typed UI values and bounded nested tooltips are renderer-neutral; frontend applications still own drawing and widget behavior.
 
-1. Simulation core — tick counter, serializable state, command queue, deterministic random stream, event and trigger scheduling.
-2. Game modules — optional diplomacy, economy, military, population, politics, and AI systems operating through explicit interfaces.
-3. Content and mods — structured definitions for data plus Lua for rules and event logic. Scripts submit validated simulation commands through a limited API.
-4. Presentation and tools — map renderer, data-driven UI, and map/scenario editor. These consume simulation snapshots and send player commands; they do not own authoritative game state.
-5. Multiplayer transport — exchanges ordered player commands and checks state hashes. Networking is not part of the initial core.
+## Tick and determinism contract
 
-## Determinism rules
+- `Simulation::step` advances exactly one integer tick. `FixedStepClock` converts elapsed wall time to due ticks, scales speed, and supports pause; it is host pacing state and is not saved.
+- Commands are ordered by tick, player ID, and sequence. Player ID zero is reserved for deterministic engine-generated commands such as event openings.
+- Authoritative values use integers or fixed point. Graph path costs are precomputed before search; pathfinding does not call Lua.
+- Ordered collections and explicit tie-breaking prevent hash iteration or thread completion order from changing decisions.
+- Lua receives a fresh VM for each simulation command chunk. Its snapshot is read-only, implicit random functions are removed, and returned commands are typed before they can be scheduled.
+- AI workers score immutable candidate inputs. Results are sorted before a host schedules commands; workers do not mutate simulation state.
+- The SplitMix64 algorithm and save/replay format are compatibility contracts. Save format 6 reads formats 3 through 5 with defaults for newer fields and writes the upgraded schema.
+- `CanonicalStateHash` hashes serialized authoritative world state with FNV-1a-64. It is a replay/desync diagnostic checksum, not a cryptographic integrity mechanism.
 
-- Advance the simulation by integer ticks. Real-time frame pacing, pause, and speed controls belong to the host application.
-- Give all player inputs a simulation tick and a stable order key. Never depend on network arrival order.
-- Prefer integer or fixed-point quantities for authoritative state. Floating-point calculations and platform-dependent iteration must not affect lockstep outcomes.
-- Use ordered collections and explicit tie-breaking whenever iteration order can affect results.
-- Keep random draws in a versioned, seeded algorithm. A release that changes it must account for save and multiplayer compatibility.
-- Save pending commands and all future gameplay state, not just the visible world.
-- A state hash and replay format still need a separately specified, canonical byte encoding before they can support multiplayer verification.
+## Current limits
 
-These rules make reproducibility a design target. They do not by themselves guarantee that future modules, Lua scripts, or platform builds are deterministic.
-
-## Current boundary
-
-The first Rust slice contains an integer tick counter (without wall-clock pacing), country/province state, ordered commands, a seeded SplitMix64 stream, and versioned JSON persistence. Calendar rules, triggers, gameplay modules, renderer, tools, and network protocol are not implemented yet.
+The current implementation is a foundation, not a complete 1.0 engine. `Campaign::advance_tick` defines a fixed orchestration order for current events and gameplay systems; a content-configurable system registry and full command API for every gameplay module remain roadmap work. A GPU renderer, widget toolkit, editor and observer apps, reference-game content, stress qualification, and network transport remain open roadmap work.

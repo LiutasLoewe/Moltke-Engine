@@ -1,0 +1,11 @@
+[package]
+name = "moltke-content"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Deterministic TOML content and mod-loading primitives for Moltke Engine"
+
+[dependencies]
+serde.workspace = true
+toml.workspace = true

@@ -1,0 +1,16 @@
+[[events]]
+id = "frontier_market"
+recipient = 1
+once = true
+mean_time_to_happen_ticks = 30
+trigger = { op = "stat_compare", args = { entity = 10, stat = "stability", comparison = "less", value = 2500 } }
+
+[[events.options]]
+id = "charter"
+localization_key = "event.frontier_market.charter"
+effects = [{ SetCountryStability = { country_id = 1, stability_bp = 6500 } }]
+
+[[events.options]]
+id = "refuse"
+localization_key = "event.frontier_market.refuse"
+effects = []

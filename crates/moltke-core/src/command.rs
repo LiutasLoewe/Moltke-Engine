@@ -1,4 +1,7 @@
-use crate::{CountryId, CountryTag, EntityId, Fixed, Modifier, ModifierError, ModifierId, PlayerId, ProvinceId, StatId, Tick};
+use crate::{
+    ComponentValue, CountryId, CountryTag, EntityId, EntityStoreError, EventId, EventInstanceId,
+    Fixed, Modifier, ModifierError, ModifierId, PlayerId, ProvinceId, StatId, Tick,
+};
 use serde::{Deserialize, Serialize};
 
 /// A game-specific mutation requested for a future simulation tick.
@@ -20,9 +23,48 @@ pub enum CommandAction {
         country_id: CountryId,
         stability_bp: i16,
     },
-    SetStat { entity: EntityId, stat: StatId, value: Fixed },
-    AddModifier { modifier: Modifier },
-    RemoveModifier { modifier_id: ModifierId },
+    SetStat {
+        entity: EntityId,
+        stat: StatId,
+        value: Fixed,
+    },
+    AddModifier {
+        modifier: Modifier,
+    },
+    RemoveModifier {
+        modifier_id: ModifierId,
+    },
+    CreateEntity {
+        entity_id: EntityId,
+    },
+    AddEntityTag {
+        entity_id: EntityId,
+        tag: String,
+    },
+    RemoveEntityTag {
+        entity_id: EntityId,
+        tag: String,
+    },
+    SetComponentField {
+        entity_id: EntityId,
+        component: String,
+        field: String,
+        value: ComponentValue,
+    },
+    RemoveComponentField {
+        entity_id: EntityId,
+        component: String,
+        field: String,
+    },
+    OpenEvent {
+        event_id: EventId,
+        recipient: PlayerId,
+        once: bool,
+        cooldown_ticks: Option<u64>,
+    },
+    ResolveEvent {
+        instance_id: EventInstanceId,
+    },
 }
 
 /// Command order is tick, player ID, then sequence.
@@ -35,12 +77,7 @@ pub struct QueuedCommand {
 }
 
 impl QueuedCommand {
-    pub fn new(
-        tick: Tick,
-        player_id: PlayerId,
-        sequence: u64,
-        action: CommandAction,
-    ) -> Self {
+    pub fn new(tick: Tick, player_id: PlayerId, sequence: u64, action: CommandAction) -> Self {
         Self {
             tick,
             player_id,
@@ -60,6 +97,15 @@ pub enum CommandError {
     StabilityOutOfRange(i16),
     InvalidStatId(String),
     Modifier(ModifierError),
+    EntityStore(EntityStoreError),
+    EventState(crate::EventStateError),
+    EventUnavailable(EventId),
+    UnknownEventInstance(EventInstanceId),
+    WrongEventRecipient {
+        instance_id: EventInstanceId,
+        expected: PlayerId,
+        actual: PlayerId,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

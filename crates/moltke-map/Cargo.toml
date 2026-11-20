@@ -1,0 +1,11 @@
+[package]
+name = "moltke-map"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Generic strategy-map import and deterministic procedural generation"
+
+[dependencies]
+moltke-core = { path = "../moltke-core" }
+image.workspace = true

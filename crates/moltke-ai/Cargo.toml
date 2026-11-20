@@ -1,0 +1,10 @@
+[package]
+name = "moltke-ai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Deterministic, parallel utility-scoring primitives for strategy-game AI"
+
+[dependencies]
+moltke-core = { path = "../moltke-core" }

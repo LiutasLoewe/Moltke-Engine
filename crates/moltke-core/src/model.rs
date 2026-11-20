@@ -1,6 +1,7 @@
 use crate::{
-    CountryId, CountryTag, DeterministicRng, EntityId, Fixed, GraphError, MapGraph,
-    ModifierError, ModifierSet, ProvinceId, StatId, Tick,
+    CalendarConfig, CalendarError, CountryId, CountryTag, DeterministicRng, EntityId,
+    EntityStore, EntityStoreError, EventRuntimeState, EventStateError, Fixed, GraphError,
+    MapGraph, ModifierError, ModifierSet, ProvinceId, StatId, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -33,6 +34,12 @@ pub struct WorldState {
     pub(crate) modifiers: ModifierSet,
     #[serde(default)]
     pub(crate) base_stats: BTreeMap<EntityId, BTreeMap<StatId, Fixed>>,
+    #[serde(default)]
+    pub(crate) event_runtime: EventRuntimeState,
+    #[serde(default)]
+    pub(crate) calendar: CalendarConfig,
+    #[serde(default)]
+    pub(crate) entity_store: EntityStore,
 }
 
 impl WorldState {
@@ -45,6 +52,9 @@ impl WorldState {
             map: MapGraph::default(),
             modifiers: ModifierSet::default(),
             base_stats: BTreeMap::new(),
+            event_runtime: EventRuntimeState::default(),
+            calendar: CalendarConfig::default(),
+            entity_store: EntityStore::default(),
         }
     }
 
@@ -68,21 +78,52 @@ impl WorldState {
         &self.provinces
     }
 
-    pub fn map_graph(&self) -> &MapGraph { &self.map }
-    pub fn map_graph_mut(&mut self) -> &mut MapGraph { &mut self.map }
-    pub fn modifiers(&self) -> &ModifierSet { &self.modifiers }
-    pub fn modifiers_mut(&mut self) -> &mut ModifierSet { &mut self.modifiers }
+    pub fn map_graph(&self) -> &MapGraph {
+        &self.map
+    }
+    pub fn map_graph_mut(&mut self) -> &mut MapGraph {
+        &mut self.map
+    }
+    pub fn modifiers(&self) -> &ModifierSet {
+        &self.modifiers
+    }
+    pub fn modifiers_mut(&mut self) -> &mut ModifierSet {
+        &mut self.modifiers
+    }
+    pub fn event_runtime(&self) -> &EventRuntimeState {
+        &self.event_runtime
+    }
+    pub fn event_runtime_mut(&mut self) -> &mut EventRuntimeState {
+        &mut self.event_runtime
+    }
+    pub fn calendar_config(&self) -> &CalendarConfig {
+        &self.calendar
+    }
+
+    pub fn entities(&self) -> &EntityStore {
+        &self.entity_store
+    }
 
     pub fn base_stat(&self, entity: EntityId, stat: &StatId) -> Fixed {
-        self.base_stats.get(&entity).and_then(|stats| stats.get(stat)).copied().unwrap_or(Fixed::ZERO)
+        self.base_stats
+            .get(&entity)
+            .and_then(|stats| stats.get(stat))
+            .copied()
+            .unwrap_or(Fixed::ZERO)
     }
 
     pub fn set_base_stat(&mut self, entity: EntityId, stat: StatId, value: Fixed) {
-        self.base_stats.entry(entity).or_default().insert(stat, value);
+        self.base_stats
+            .entry(entity)
+            .or_default()
+            .insert(stat, value);
     }
 
     pub fn stat_value(
-        &mut self, entity: EntityId, stat: &StatId, now: Tick,
+        &mut self,
+        entity: EntityId,
+        stat: &StatId,
+        now: Tick,
     ) -> Result<Fixed, ModifierError> {
         let base = self.base_stat(entity, stat);
         self.modifiers.evaluate(entity, stat, base, now)
@@ -95,10 +136,22 @@ impl WorldState {
 
     pub fn validate(&self) -> Result<(), StateValidationError> {
         self.map.validate().map_err(StateValidationError::Graph)?;
-        self.modifiers.validate().map_err(StateValidationError::Modifiers)?;
+        self.modifiers
+            .validate()
+            .map_err(StateValidationError::Modifiers)?;
+        self.event_runtime
+            .validate(self.tick)
+            .map_err(StateValidationError::Events)?;
+        self.calendar
+            .validate()
+            .map_err(StateValidationError::Calendar)?;
+        self.entity_store
+            .validate()
+            .map_err(StateValidationError::Entities)?;
         for stats in self.base_stats.values() {
             for stat in stats.keys() {
-                StatId::new(stat.as_str()).map_err(|_| StateValidationError::InvalidStatId(stat.as_str().to_owned()))?;
+                StatId::new(stat.as_str())
+                    .map_err(|_| StateValidationError::InvalidStatId(stat.as_str().to_owned()))?;
             }
         }
         let mut tags = std::collections::BTreeSet::new();
@@ -118,13 +171,13 @@ impl WorldState {
         }
 
         for (province_id, province) in &self.provinces {
-            if let Some(owner) = province.owner {
-                if !self.countries.contains_key(&owner) {
-                    return Err(StateValidationError::MissingProvinceOwner {
-                        province_id: *province_id,
-                        country_id: owner,
-                    });
-                }
+            if let Some(owner) = province.owner
+                && !self.countries.contains_key(&owner)
+            {
+                return Err(StateValidationError::MissingProvinceOwner {
+                    province_id: *province_id,
+                    country_id: owner,
+                });
             }
         }
 
@@ -139,6 +192,9 @@ pub enum StateValidationError {
     StabilityOutOfRange(CountryId),
     Graph(GraphError),
     Modifiers(ModifierError),
+    Events(EventStateError),
+    Calendar(CalendarError),
+    Entities(EntityStoreError),
     InvalidStatId(String),
     MissingProvinceOwner {
         province_id: ProvinceId,

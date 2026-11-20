@@ -11,16 +11,24 @@ permissions:
 
 jobs:
   check:
-    name: Compile and lint
-    runs-on: ubuntu-latest
+    name: Compile and lint (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@v4
       - name: Install stable Rust tools
         run: |
           rustup update stable --no-self-update
-          rustup component add clippy --toolchain stable
+          rustup component add clippy rustfmt --toolchain stable
       - name: Compile workspace
         run: cargo check --workspace --all-targets
+      - name: Run workspace tests
+        run: cargo test --workspace --all-targets
+      - name: Check formatting
+        run: cargo fmt --all -- --check
       - name: Run clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

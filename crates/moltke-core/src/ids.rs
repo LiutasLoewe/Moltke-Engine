@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Monotonically increasing simulation step.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
 #[serde(transparent)]
 pub struct Tick(pub u64);
 

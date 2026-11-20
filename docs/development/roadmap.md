@@ -1,25 +1,39 @@
 # Development roadmap
 
-## Milestone 1 — Generic map graph and modifiers (implemented; compile verification pending)
-- Stable directed nodes and edges, integer positions and costs, tags, graph validation, and deterministic Dijkstra.
-- Integer cost overrides and blocked edges are supplied as a precomputed table; the pathfinder never calls Lua.
-- Generic entities and stat keys, fixed-point additive and multiplicative modifiers, source attribution, expiry, stable evaluation, and a derived per-tick cache.
-- Persist both systems in simulation saves and validate them on load.
+## Milestone 1 — Deterministic core
 
-## Milestone 2 — Tick phases, events, triggers, decisions (in progress)
-- Implemented: generic fixed-point base stats, stat/modifier commands, and a bounded serializable trigger AST for tick and stat comparisons with All/Any/Not.
-- Next: serializable event definitions and pending choices, scheduled trigger evaluation and on-actions, deterministic mean-time-to-happen, and command effects.
-- Then: Lua snapshot-in and validated-command-out hooks; decisions and mission/research trees over the shared trigger/effect system.
-- Still needed: define and version the exact simulation phase order before modules rely on it.
+**Implemented:** fixed-step simulation, host pacing clock, configurable tick-to-calendar mapping, ordered commands, seeded RNG, canonical state checksum, JSON replay/verification API, version 6 saves with versions 3–5 read compatibility, genre-neutral entities and typed component fields, generic graph, Dijkstra/A*, and fixed-point modifiers.
 
-## Milestone 3 — Content pipeline and mod ecosystem
-Choose a versioned data format and manifest. Add diagnostics, reference validation, stable IDs, mod dependency ordering, layered virtual filesystem and explicit override rules, localization keys and fallback, and content/script compatibility hashes. Permit hot reload only in paused single-player/editor sessions.
+**Still required:** add a content-configurable system registry, move all authoritative updates behind command/system APIs, and measure the 100,000-node / 1-million-object performance target.
 
-## Milestone 4 — Optional gameplay and deterministic AI
-Add optional diplomacy and relations, conflicts, units and logistics, economy and trade, resources, populations, then utility AI. AI scores immutable snapshots, can parallelize independent calculations, then sorts outputs before command submission. Add observer runs and profiling counters.
+## Milestone 2 — Content and event runtime
 
-## Milestone 5 — Presentation API, tooling, multiplayer
-Define read-only snapshots and command submission for external renderers; add map modes and nested tooltip queries. Build RGB/heightmap import, coordinate editing, procedural map adapters, scenario tools, and headless validation. Specify canonical hashes, replay format, command synchronization, pause/authority, desync reports, and compatibility. Renderer stays an adapter, not a core dependency.
+**Implemented:** TOML parsing, game/mod manifests, deterministic transitive mod ordering, layered virtual files with override diagnostics, localization fallback, Lua 5.4 isolated command chunks, serializable pending events, bounded triggers, once/cooldown behavior, event options, and command-based effect scheduling.
 
-## Quality gates
-Profile representative world sizes before parallelizing simulation updates. Version IDs, command order, save migrations, and PRNG algorithms. Keep caches derived. Replay identical commands and compare canonical hashes across supported platforms before claiming lockstep support.
+**Still required:** on-actions, mean-time-to-happen, decision and mission/research systems, richer schema diagnostics, content/script hashes, hot reload, and comprehensive command validation against a loaded game definition.
+
+## Milestone 3 — Maps, gameplay, and AI
+
+**Implemented:** PNG/BMP RGB region import, grayscale heightmap reading, adjacency graph creation, seeded grid generation, initial diplomacy/relations/treaties/warscore, resource stockpiles and production rules, population needs/ideology shares, unit movement/supply consumption, campaign save bundling, deterministic parallel utility scoring, and a fixed campaign tick order coordinating event evaluation, core commands, and enabled gameplay modules. Economy tick updates are staged before inventory changes are committed.
+
+**Still required:** full trade/logistics networks, peace negotiation and province transfers, configurable combat, government/cores/buildings, complete pops and ideology simulation, research, AI candidate generation, and simulation-integrated system registration.
+
+## Milestone 4 — Renderer, UI, tools, and reference game
+
+**Implemented interface:** renderer-neutral graph snapshots, ordered tag-driven map-mode styles, typed UI field values, and bounded nested tooltip data in `moltke-presentation`.
+
+**Not implemented yet:** custom Rust 2D/3D `wgpu` renderer, simulation-fed political/terrain/diplomacy/economy map data, dynamic borders and unit visuals, widget toolkit and layout, map/scenario editor, in-game console, observer/headless app, and a complete historically themed sample campaign using independently licensed content.
+
+## Milestone 5 — 1.0 hardening
+
+**Not implemented yet:** 8 GB device qualification with a 5 GB engine-process ceiling, sustained 10 full ticks/s on the documented 8-core Windows reference PC, save/replay migration coverage, Windows release packaging, dependency/license inventory, and public modder/developer documentation.
+
+Online multiplayer follows 1.0. Replays and state hashes are available as foundations; cross-machine lockstep support is not claimed.
+
+## Release gates
+
+- Workspace compilation and Clippy must pass on Windows CI; a Linux compile job can guard portability.
+- Add deterministic scenario/replay checks for same-seed runs and different AI worker counts before claiming determinism across builds.
+- Validate malformed TOML, Lua command output, map imports, and saves before loading user content.
+- Run the exact stress scenario at the selected 8 GB/8-core device limit and publish hardware/build details with measurements.
+- Keep the README and GitHub language classification aligned with tracked files; the repository contains no Godot project or GDScript source.

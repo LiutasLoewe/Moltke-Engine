@@ -5,13 +5,27 @@ const MAX_TRIGGER_DEPTH: usize = 128;
 const MAX_TRIGGER_NODES: usize = 4_096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum Comparison { Equal, NotEqual, Less, LessOrEqual, Greater, GreaterOrEqual }
+#[serde(rename_all = "snake_case")]
+pub enum Comparison {
+    Equal,
+    NotEqual,
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", content = "args", rename_all = "snake_case")]
 pub enum TriggerExpr {
     Always,
     TickAtLeast(Tick),
-    StatCompare { entity: EntityId, stat: StatId, comparison: Comparison, value: Fixed },
+    StatCompare {
+        entity: EntityId,
+        stat: StatId,
+        comparison: Comparison,
+        value: Fixed,
+    },
     All(Vec<TriggerExpr>),
     Any(Vec<TriggerExpr>),
     Not(Box<TriggerExpr>),
@@ -35,15 +49,22 @@ impl TriggerExpr {
 
     pub fn validate(&self) -> Result<(), TriggerError> {
         fn visit(expr: &TriggerExpr, depth: usize, count: &mut usize) -> Result<(), TriggerError> {
-            if depth > MAX_TRIGGER_DEPTH { return Err(TriggerError::TooDeep); }
+            if depth > MAX_TRIGGER_DEPTH {
+                return Err(TriggerError::TooDeep);
+            }
             *count += 1;
-            if *count > MAX_TRIGGER_NODES { return Err(TriggerError::TooManyNodes); }
+            if *count > MAX_TRIGGER_NODES {
+                return Err(TriggerError::TooManyNodes);
+            }
             match expr {
                 TriggerExpr::StatCompare { stat, .. } => {
-                    StatId::new(stat.as_str()).map_err(|_| TriggerError::InvalidStatId(stat.as_str().to_owned()))?;
+                    StatId::new(stat.as_str())
+                        .map_err(|_| TriggerError::InvalidStatId(stat.as_str().to_owned()))?;
                 }
                 TriggerExpr::All(children) | TriggerExpr::Any(children) => {
-                    for child in children { visit(child, depth + 1, count)?; }
+                    for child in children {
+                        visit(child, depth + 1, count)?;
+                    }
                 }
                 TriggerExpr::Not(child) => visit(child, depth + 1, count)?,
                 TriggerExpr::Always | TriggerExpr::TickAtLeast(_) => {}
@@ -58,9 +79,15 @@ impl TriggerExpr {
         match self {
             TriggerExpr::Always => Ok(true),
             TriggerExpr::TickAtLeast(tick) => Ok(state.tick() >= *tick),
-            TriggerExpr::StatCompare { entity, stat, comparison, value } => {
+            TriggerExpr::StatCompare {
+                entity,
+                stat,
+                comparison,
+                value,
+            } => {
                 let now = state.tick();
-                let actual = state.stat_value(*entity, stat, now)
+                let actual = state
+                    .stat_value(*entity, stat, now)
                     .map_err(TriggerError::Modifier)?;
                 Ok(match comparison {
                     Comparison::Equal => actual == *value,
@@ -73,13 +100,17 @@ impl TriggerExpr {
             }
             TriggerExpr::All(children) => {
                 for child in children {
-                    if !child.evaluate_inner(state)? { return Ok(false); }
+                    if !child.evaluate_inner(state)? {
+                        return Ok(false);
+                    }
                 }
                 Ok(true)
             }
             TriggerExpr::Any(children) => {
                 for child in children {
-                    if child.evaluate_inner(state)? { return Ok(true); }
+                    if child.evaluate_inner(state)? {
+                        return Ok(true);
+                    }
                 }
                 Ok(false)
             }

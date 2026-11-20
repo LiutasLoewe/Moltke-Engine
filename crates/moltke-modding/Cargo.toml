@@ -7,4 +7,5 @@ license.workspace = true
 description = "Constrained Lua scripting foundation for Moltke Engine"
 
 [dependencies]
-mlua = { version = "0.12.2", features = ["lua54", "vendored"] }
+moltke-core = { path = "../moltke-core" }
+mlua = { version = "0.12.2", default-features = false, features = ["lua54", "vendored"] }

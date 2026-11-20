@@ -1,0 +1,13 @@
+[package]
+name = "moltke-gameplay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Optional diplomacy, economy, population, and military data models"
+
+[dependencies]
+moltke-events = { path = "../moltke-events" }
+moltke-core = { path = "../moltke-core" }
+serde.workspace = true
+serde_json.workspace = true
