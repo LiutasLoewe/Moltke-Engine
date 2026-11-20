@@ -62,6 +62,7 @@ impl Simulation {
     pub fn step(&mut self) -> Result<Vec<CommandOutcome>, ClockError> {
         let next_tick = Tick(self.state.tick.0.checked_add(1).ok_or(ClockError::TickOverflow)?);
         self.state.tick = next_tick;
+        self.state.modifiers.remove_expired(next_tick);
 
         let mut due = Vec::new();
         let mut future = Vec::with_capacity(self.queue.len());
