@@ -1,0 +1,34 @@
+[[systems]]
+id = "input.commands"
+phase = "input"
+enabled_by_default = true
+
+[[systems]]
+id = "events.evaluate"
+phase = "events"
+enabled_by_default = true
+after = ["input.commands"]
+
+[[systems]]
+id = "core.commands"
+phase = "commands"
+enabled_by_default = true
+after = ["events.evaluate"]
+
+[[systems]]
+id = "economy.production"
+phase = "gameplay"
+enabled_by_default = true
+after = ["core.commands"]
+
+[[systems]]
+id = "military.movement"
+phase = "gameplay"
+enabled_by_default = true
+after = ["economy.production"]
+
+[[systems]]
+id = "state.cleanup"
+phase = "cleanup"
+enabled_by_default = true
+after = ["military.movement"]

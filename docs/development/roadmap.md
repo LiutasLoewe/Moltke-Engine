@@ -2,9 +2,9 @@
 
 ## Milestone 1 — Deterministic core
 
-**Implemented:** fixed-step simulation, host pacing clock, configurable tick-to-calendar mapping, ordered commands, seeded RNG, canonical state checksum, JSON replay/verification API, version 6 saves with versions 3–5 read compatibility, genre-neutral entities and typed component fields, generic graph, Dijkstra/A*, and fixed-point modifiers.
+**Implemented:** fixed-step simulation, host pacing clock, configurable tick-to-calendar mapping, ordered commands, seeded RNG, canonical state checksum, JSON replay/verification API, version 6 saves with versions 3–5 read compatibility, genre-neutral entities and typed component fields, generic graph, Dijkstra/A*, fixed-point modifiers, and a data-defined deterministic phase/dependency schedule registry.
 
-**Still required:** add a content-configurable system registry, move all authoritative updates behind command/system APIs, and measure the 100,000-node / 1-million-object performance target.
+**Still required:** bind scheduled IDs to registered runtime system implementations, move all authoritative updates behind command/system APIs, and measure the 100,000-node / 1-million-object performance target.
 
 ## Milestone 2 — Content and event runtime
 

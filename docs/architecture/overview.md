@@ -7,7 +7,7 @@ Moltke is an independent, genre-agnostic strategy simulation engine written in R
 ## Workspace layers
 
 1. `moltke-core` owns integer ticks, ordered commands, world state, generic tagged entities with typed component fields, graph primitives, fixed-point stats/modifiers, event runtime state, saves, replay, and diagnostic state hashes.
-2. `moltke-content` parses TOML, resolves package dependencies, mounts layered virtual files, and resolves localization keys.
+2. `moltke-content` parses TOML, resolves package dependencies, mounts layered virtual files, resolves localization keys, and validates a stable data-defined system schedule across fixed tick phases.
 3. `moltke-modding` runs isolated Lua 5.4 chunks against read-only simulation snapshots and converts returned tables into typed commands.
 4. `moltke-events` validates data-defined triggers/options and schedules open/resolve commands. Pending choices and cooldowns live in core save state.
 5. `moltke-map` converts RGB region rasters and heightmaps to core graphs and provides deterministic seeded grid generation.
@@ -27,4 +27,4 @@ Moltke is an independent, genre-agnostic strategy simulation engine written in R
 
 ## Current limits
 
-The current implementation is a foundation, not a complete 1.0 engine. `Campaign::advance_tick` defines a fixed orchestration order for current events and gameplay systems; a content-configurable system registry and full command API for every gameplay module remain roadmap work. A GPU renderer, widget toolkit, editor and observer apps, reference-game content, stress qualification, and network transport remain open roadmap work.
+The current implementation is a foundation, not a complete 1.0 engine. `Campaign::advance_tick` defines the execution order for current events and gameplay systems; the data-defined registry validates and orders systems, but general runtime hooks and a full command API for every gameplay module remain roadmap work. A GPU renderer, widget toolkit, editor and observer apps, reference-game content, stress qualification, and network transport remain open roadmap work.

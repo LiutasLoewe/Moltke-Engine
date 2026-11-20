@@ -78,6 +78,182 @@ impl ModManifest {
     }
 }
 
+/// Stable simulation phase order. A game can add systems inside these engine
+/// boundaries, while the host remains responsible for executing each system.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SystemPhase {
+    Input,
+    Events,
+    Commands,
+    Gameplay,
+    Cleanup,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SystemDefinition {
+    pub id: String,
+    pub phase: SystemPhase,
+    #[serde(default)]
+    pub enabled_by_default: bool,
+    #[serde(default)]
+    pub after: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SystemRegistry {
+    ordered: Vec<SystemDefinition>,
+}
+
+impl SystemRegistry {
+    pub fn new(
+        definitions: impl IntoIterator<Item = SystemDefinition>,
+    ) -> Result<Self, ContentError> {
+        let mut by_id = BTreeMap::new();
+        for definition in definitions {
+            validate_id(&definition.id)?;
+            let mut dependencies = BTreeSet::new();
+            for dependency in &definition.after {
+                validate_id(dependency)?;
+                if dependency == &definition.id || !dependencies.insert(dependency) {
+                    return Err(ContentError::InvalidSystemDependency {
+                        system: definition.id.clone(),
+                        dependency: dependency.clone(),
+                    });
+                }
+            }
+            let id = definition.id.clone();
+            if by_id.insert(id.clone(), definition).is_some() {
+                return Err(ContentError::DuplicateSystem(id));
+            }
+            if by_id.len() > MAX_SYSTEMS {
+                return Err(ContentError::TooManySystems(by_id.len()));
+            }
+        }
+
+        for definition in by_id.values() {
+            for dependency in &definition.after {
+                let Some(previous) = by_id.get(dependency) else {
+                    return Err(ContentError::UnknownSystemDependency {
+                        system: definition.id.clone(),
+                        dependency: dependency.clone(),
+                    });
+                };
+                if previous.phase > definition.phase {
+                    return Err(ContentError::SystemPhaseInversion {
+                        system: definition.id.clone(),
+                        dependency: dependency.clone(),
+                    });
+                }
+            }
+        }
+
+        let mut ordered = Vec::with_capacity(by_id.len());
+        for phase in [
+            SystemPhase::Input,
+            SystemPhase::Events,
+            SystemPhase::Commands,
+            SystemPhase::Gameplay,
+            SystemPhase::Cleanup,
+        ] {
+            let mut indegree: BTreeMap<String, usize> = by_id
+                .values()
+                .filter(|definition| definition.phase == phase)
+                .map(|definition| (definition.id.clone(), 0))
+                .collect();
+            let mut successors: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+            for definition in by_id
+                .values()
+                .filter(|definition| definition.phase == phase)
+            {
+                for dependency in &definition.after {
+                    if by_id[dependency].phase == phase {
+                        *indegree
+                            .get_mut(&definition.id)
+                            .expect("registered system has an indegree") += 1;
+                        successors
+                            .entry(dependency.clone())
+                            .or_default()
+                            .insert(definition.id.clone());
+                    }
+                }
+            }
+
+            let mut ready: BTreeSet<String> = indegree
+                .iter()
+                .filter(|(_, degree)| **degree == 0)
+                .map(|(id, _)| id.clone())
+                .collect();
+            let phase_count = indegree.len();
+            let mut scheduled = 0;
+            while let Some(id) = ready.pop_first() {
+                scheduled += 1;
+                ordered.push(by_id[&id].clone());
+                if let Some(dependents) = successors.get(&id) {
+                    for dependent in dependents {
+                        let degree = indegree
+                            .get_mut(dependent)
+                            .expect("dependent system has an indegree");
+                        *degree -= 1;
+                        if *degree == 0 {
+                            ready.insert(dependent.clone());
+                        }
+                    }
+                }
+            }
+            if scheduled != phase_count {
+                let cycle = indegree
+                    .into_iter()
+                    .filter_map(|(id, degree)| (degree > 0).then_some(id))
+                    .collect();
+                return Err(ContentError::SystemDependencyCycle(cycle));
+            }
+        }
+        Ok(Self { ordered })
+    }
+
+    pub fn from_toml(path: &str, source: &str) -> Result<Self, ContentError> {
+        let file: SystemFile = parse_toml(path, source)?;
+        Self::new(file.systems)
+    }
+
+    pub fn schedule(&self) -> &[SystemDefinition] {
+        &self.ordered
+    }
+
+    /// Explicit enablement replaces defaults. Output preserves the validated
+    /// deterministic schedule regardless of the order of requested IDs.
+    pub fn enabled_schedule(
+        &self,
+        enabled: Option<&BTreeSet<String>>,
+    ) -> Result<Vec<&SystemDefinition>, ContentError> {
+        if let Some(enabled) = enabled {
+            for id in enabled {
+                if !self.ordered.iter().any(|definition| &definition.id == id) {
+                    return Err(ContentError::UnknownSystem(id.clone()));
+                }
+            }
+        }
+        Ok(self
+            .ordered
+            .iter()
+            .filter(|definition| {
+                enabled.map_or(definition.enabled_by_default, |set| set.contains(&definition.id))
+            })
+            .collect())
+    }
+}
+
+const MAX_SYSTEMS: usize = 4_096;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SystemFile {
+    #[serde(default)]
+    systems: Vec<SystemDefinition>,
+}
+
 /// Resolves enabled mods in stable topological order. Dependencies are added
 /// automatically; requested mod order breaks ties between otherwise unrelated
 /// packages and later packages take override precedence in the VFS.
@@ -441,6 +617,22 @@ pub enum ContentError {
     InvalidVersion(String),
     InvalidLocale(String),
     DuplicateModule(String),
+    DuplicateSystem(String),
+    TooManySystems(usize),
+    UnknownSystem(String),
+    InvalidSystemDependency {
+        system: String,
+        dependency: String,
+    },
+    UnknownSystemDependency {
+        system: String,
+        dependency: String,
+    },
+    SystemPhaseInversion {
+        system: String,
+        dependency: String,
+    },
+    SystemDependencyCycle(Vec<String>),
     DuplicateMod(String),
     DuplicateEnabledMod(String),
     UnknownEnabledMod(String),
@@ -484,6 +676,28 @@ impl fmt::Display for ContentError {
             Self::DuplicateModule(module) => {
                 write!(formatter, "module {module:?} is listed more than once")
             }
+            Self::DuplicateSystem(id) => write!(formatter, "duplicate simulation system: {id}"),
+            Self::TooManySystems(count) => {
+                write!(formatter, "system count {count} exceeds the supported limit")
+            }
+            Self::UnknownSystem(id) => write!(formatter, "unknown simulation system: {id}"),
+            Self::InvalidSystemDependency { system, dependency } => write!(
+                formatter,
+                "system {system:?} has an invalid dependency {dependency:?}"
+            ),
+            Self::UnknownSystemDependency { system, dependency } => write!(
+                formatter,
+                "system {system:?} depends on missing system {dependency:?}"
+            ),
+            Self::SystemPhaseInversion { system, dependency } => write!(
+                formatter,
+                "system {system:?} cannot run after later-phase system {dependency:?}"
+            ),
+            Self::SystemDependencyCycle(cycle) => write!(
+                formatter,
+                "simulation system dependency cycle: {}",
+                cycle.join(", ")
+            ),
             Self::DuplicateMod(id) => write!(formatter, "duplicate mod identifier: {id}"),
             Self::DuplicateEnabledMod(id) => {
                 write!(formatter, "mod {id:?} is enabled more than once")

@@ -8,6 +8,10 @@ Moltke uses both structured content and Lua 5.4. TOML defines package manifests,
 
 Localization is key-based. Later package values override earlier ones; resolution checks the requested locale, then the game fallback locale, then returns the key so missing translations remain visible.
 
+## Deterministic system schedules
+
+`SystemRegistry` loads `systems.toml`, validates system identifiers and dependencies, and resolves a stable order across the fixed `input`, `events`, `commands`, `gameplay`, and `cleanup` phases. Dependencies within one phase are topologically sorted with system IDs as tie-breakers; cross-phase dependencies may only point forward. Explicit enablement replaces the file's defaults. The registry defines order only; the host still binds registered IDs to trusted Rust system implementations. See `examples/game/systems.toml`.
+
 ## Lua simulation API
 
 `LuaSandbox::execute_commands` creates a fresh VM, installs a read-only `snapshot` table containing the current tick, countries, provinces, and ordered generic entities, and evaluates a chunk that returns an array of command tables. The host converts only supported command kinds to `CommandAction` values and assigns the target tick and deterministic sequence numbers. Callers schedule the returned vector atomically with `Simulation::schedule_commands`.
