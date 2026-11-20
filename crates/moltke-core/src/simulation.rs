@@ -1,6 +1,6 @@
 use crate::{
     CommandAction, CommandError, CommandOutcome, Country, CountryId, CountryTag, PlayerId,
-    Province, ProvinceId, QueuedCommand, StateValidationError, Tick, WorldState,
+    ModifierSet, Province, ProvinceId, QueuedCommand, StateValidationError, StatId, Tick, WorldState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -153,6 +153,17 @@ impl Simulation {
                 country.stability_bp = stability_bp;
                 Ok(())
             }
+            CommandAction::SetStat { entity, stat, value } => {
+                StatId::new(stat.as_str())
+                    .map_err(|_| CommandError::InvalidStatId(stat.as_str().to_owned()))?;
+                self.state.set_base_stat(entity, stat, value);
+                Ok(())
+            }
+            CommandAction::AddModifier { modifier } => self.state.modifiers.add(modifier)
+                .map_err(CommandError::Modifier),
+            CommandAction::RemoveModifier { modifier_id } => self.state.modifiers.remove(modifier_id)
+                .map(|_| ())
+                .map_err(CommandError::Modifier),
         }
     }
 
@@ -178,9 +189,21 @@ impl Simulation {
                     sequence: command.sequence,
                 });
             }
-            if let CommandAction::AddCountry { tag, .. } = &command.action {
-                CountryTag::new(tag.as_str())
-                    .map_err(|_| LoadValidationError::InvalidQueuedCountryTag)?;
+            match &command.action {
+                CommandAction::AddCountry { tag, .. } => {
+                    CountryTag::new(tag.as_str())
+                        .map_err(|_| LoadValidationError::InvalidQueuedCountryTag)?;
+                }
+                CommandAction::SetStat { stat, .. } => {
+                    StatId::new(stat.as_str())
+                        .map_err(|_| LoadValidationError::InvalidQueuedStatId)?;
+                }
+                CommandAction::AddModifier { modifier } => {
+                    let mut candidate = ModifierSet::default();
+                    candidate.add(modifier.clone())
+                        .map_err(|error| LoadValidationError::InvalidQueuedModifier(format!("{error:?}")))?;
+                }
+                _ => {}
             }
         }
         Ok(())
@@ -215,4 +238,6 @@ pub(crate) enum LoadValidationError {
         sequence: u64,
     },
     InvalidQueuedCountryTag,
+    InvalidQueuedStatId,
+    InvalidQueuedModifier(String),
 }
