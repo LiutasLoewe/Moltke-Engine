@@ -111,10 +111,13 @@ impl ModifierSet {
         for id in &expired {
             if let Some(modifier) = self.modifiers.remove(id) {
                 let key = (modifier.target, modifier.stat);
-                if let Some(ids) = self.by_target_stat.get_mut(&key) {
+                let empty = if let Some(ids) = self.by_target_stat.get_mut(&key) {
                     ids.remove(id);
-                    if ids.is_empty() { self.by_target_stat.remove(&key); }
-                }
+                    ids.is_empty()
+                } else {
+                    false
+                };
+                if empty { self.by_target_stat.remove(&key); }
             }
         }
         if !expired.is_empty() { self.clear_cache(); }
