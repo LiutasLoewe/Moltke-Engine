@@ -9,6 +9,7 @@ members = [
     "crates/moltke-ai",
     "crates/moltke-gameplay",
     "crates/moltke-presentation",
+    "crates/moltke-runtime",
 ]
 
 [workspace.package]

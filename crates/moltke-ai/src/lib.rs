@@ -175,3 +175,63 @@ impl fmt::Display for AiError {
 }
 
 impl std::error::Error for AiError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use moltke_core::StatId;
+
+    #[test]
+    fn utility_results_do_not_depend_on_worker_count_or_input_completion_order() {
+        let stability = StatId::new("stability").expect("valid stat ID");
+        let candidates = vec![
+            UtilityCandidate {
+                actor_id: EntityId(2),
+                action_id: "raise_tax".to_owned(),
+                base_score: Fixed::from_raw(500),
+                features: BTreeMap::from([("income".to_owned(), Fixed::from_raw(2_000))]),
+                command: CommandAction::SetStat {
+                    entity: EntityId(2),
+                    stat: stability.clone(),
+                    value: Fixed::from_raw(1_000),
+                },
+            },
+            UtilityCandidate {
+                actor_id: EntityId(1),
+                action_id: "build".to_owned(),
+                base_score: Fixed::from_raw(1_000),
+                features: BTreeMap::from([("growth".to_owned(), Fixed::from_raw(3_000))]),
+                command: CommandAction::SetStat {
+                    entity: EntityId(1),
+                    stat: stability.clone(),
+                    value: Fixed::from_raw(2_000),
+                },
+            },
+            UtilityCandidate {
+                actor_id: EntityId(1),
+                action_id: "research".to_owned(),
+                base_score: Fixed::from_raw(1_500),
+                features: BTreeMap::from([("growth".to_owned(), Fixed::from_raw(1_000))]),
+                command: CommandAction::SetStat {
+                    entity: EntityId(1),
+                    stat: stability,
+                    value: Fixed::from_raw(3_000),
+                },
+            },
+        ];
+        let weights = UtilityWeights {
+            by_feature: BTreeMap::from([
+                ("growth".to_owned(), Fixed::from_raw(2_000)),
+                ("income".to_owned(), Fixed::from_raw(500)),
+            ]),
+        };
+
+        let expected = rank_candidates(&candidates, &weights, 1).expect("single worker result");
+        for workers in [2, 3, 8] {
+            assert_eq!(
+                rank_candidates(&candidates, &weights, workers).expect("parallel result"),
+                expected
+            );
+        }
+    }
+}

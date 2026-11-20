@@ -351,6 +351,21 @@ pub struct OverrideNotice {
     pub replacement_source: String,
 }
 
+/// Deterministic, non-cryptographic fingerprint for content compatibility
+/// checks. It detects differing mounted content; it is not an authenticity
+/// or tamper-resistance mechanism.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct ContentFingerprint(pub [u64; 4]);
+
+impl fmt::Display for ContentFingerprint {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for lane in self.0 {
+            write!(formatter, "{lane:016x}")?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct VirtualFileSystem {
     files: BTreeMap<String, MountedFile>,
@@ -425,6 +440,35 @@ impl VirtualFileSystem {
 
     pub fn overrides(&self) -> &[OverrideNotice] {
         &self.overrides
+    }
+
+    /// Hashes effective files in normalized path order, including their
+    /// winning source IDs. Package enumeration order cannot affect the result
+    /// once the same final virtual filesystem has been mounted.
+    pub fn fingerprint(&self) -> ContentFingerprint {
+        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+        const PRIME: u64 = 0x0000_0100_0000_01b3;
+        let mut lanes = [OFFSET, OFFSET ^ 0x9e37_79b9_7f4a_7c15,
+            OFFSET ^ 0xbf58_476d_1ce4_e5b9, OFFSET ^ 0x94d0_49bb_1331_11eb];
+
+        for (path, file) in &self.files {
+            update_fingerprint(&mut lanes, path.as_bytes(), PRIME);
+            update_fingerprint(&mut lanes, file.source_id.as_bytes(), PRIME);
+            update_fingerprint(&mut lanes, &file.bytes, PRIME);
+        }
+        ContentFingerprint(lanes)
+    }
+}
+
+fn update_fingerprint(lanes: &mut [u64; 4], bytes: &[u8], prime: u64) {
+    let length = (bytes.len() as u64).to_le_bytes();
+    for (lane_index, lane) in lanes.iter_mut().enumerate() {
+        for byte in length.into_iter().chain(bytes.iter().copied()) {
+            *lane ^= u64::from(byte).wrapping_add(lane_index as u64);
+            *lane = lane.wrapping_mul(prime);
+        }
+        *lane ^= 0xff;
+        *lane = lane.wrapping_mul(prime);
     }
 }
 
@@ -765,5 +809,108 @@ impl std::error::Error for ContentError {
             Self::Toml { source, .. } => Some(source),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_registry_orders_phases_and_dependencies_stably() {
+        let registry = SystemRegistry::new([
+            SystemDefinition {
+                id: "gameplay.second".to_owned(),
+                phase: SystemPhase::Gameplay,
+                enabled_by_default: true,
+                after: vec!["gameplay.first".to_owned()],
+            },
+            SystemDefinition {
+                id: "input.commands".to_owned(),
+                phase: SystemPhase::Input,
+                enabled_by_default: true,
+                after: Vec::new(),
+            },
+            SystemDefinition {
+                id: "gameplay.first".to_owned(),
+                phase: SystemPhase::Gameplay,
+                enabled_by_default: true,
+                after: Vec::new(),
+            },
+        ])
+        .expect("valid system schedule");
+
+        let ids: Vec<_> = registry
+            .schedule()
+            .iter()
+            .map(|definition| definition.id.as_str())
+            .collect();
+        assert_eq!(ids, ["input.commands", "gameplay.first", "gameplay.second"]);
+    }
+
+    #[test]
+    fn system_registry_rejects_cycles_and_phase_inversions() {
+        let cycle = SystemRegistry::new([
+            SystemDefinition {
+                id: "system.a".to_owned(),
+                phase: SystemPhase::Gameplay,
+                enabled_by_default: true,
+                after: vec!["system.b".to_owned()],
+            },
+            SystemDefinition {
+                id: "system.b".to_owned(),
+                phase: SystemPhase::Gameplay,
+                enabled_by_default: true,
+                after: vec!["system.a".to_owned()],
+            },
+        ]);
+        assert!(matches!(cycle, Err(ContentError::SystemDependencyCycle(_))));
+
+        let inversion = SystemRegistry::new([
+            SystemDefinition {
+                id: "cleanup.finish".to_owned(),
+                phase: SystemPhase::Cleanup,
+                enabled_by_default: true,
+                after: Vec::new(),
+            },
+            SystemDefinition {
+                id: "input.start".to_owned(),
+                phase: SystemPhase::Input,
+                enabled_by_default: true,
+                after: vec!["cleanup.finish".to_owned()],
+            },
+        ]);
+        assert!(matches!(
+            inversion,
+            Err(ContentError::SystemPhaseInversion { .. })
+        ));
+    }
+
+    #[test]
+    fn content_fingerprint_tracks_effective_file_bytes_and_source() {
+        let mut first = VirtualFileSystem::default();
+        first
+            .mount(
+                "base.game",
+                [ContentFile {
+                    path: "rules/world.toml".to_owned(),
+                    bytes: b"seed = 1".to_vec(),
+                }],
+            )
+            .expect("mount content");
+        let original = first.fingerprint();
+        assert_eq!(original, first.fingerprint());
+
+        let mut changed = VirtualFileSystem::default();
+        changed
+            .mount(
+                "base.game",
+                [ContentFile {
+                    path: "rules/world.toml".to_owned(),
+                    bytes: b"seed = 2".to_vec(),
+                }],
+            )
+            .expect("mount changed content");
+        assert_ne!(original, changed.fingerprint());
     }
 }

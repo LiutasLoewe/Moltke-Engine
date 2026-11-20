@@ -1,0 +1,12 @@
+[package]
+name = "moltke-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Deterministic runtime host for registered Moltke simulation systems"
+
+[dependencies]
+moltke-content = { path = "../moltke-content" }
+moltke-core = { path = "../moltke-core" }
+serde_json.workspace = true

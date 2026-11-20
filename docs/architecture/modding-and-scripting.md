@@ -8,6 +8,8 @@ Moltke uses both structured content and Lua 5.4. TOML defines package manifests,
 
 Localization is key-based. Later package values override earlier ones; resolution checks the requested locale, then the game fallback locale, then returns the key so missing translations remain visible.
 
+The mounted virtual filesystem exposes a deterministic content fingerprint over effective normalized paths, winning source IDs, and file bytes. This is suitable for replay/content compatibility checks, not for verifying publisher identity or malicious changes.
+
 ## Deterministic system schedules
 
 `SystemRegistry` loads `systems.toml`, validates system identifiers and dependencies, and resolves a stable order across the fixed `input`, `events`, `commands`, `gameplay`, and `cleanup` phases. Dependencies within one phase are topologically sorted with system IDs as tie-breakers; cross-phase dependencies may only point forward. Explicit enablement replaces the file's defaults. The registry defines order only; the host still binds registered IDs to trusted Rust system implementations. See `examples/game/systems.toml`.

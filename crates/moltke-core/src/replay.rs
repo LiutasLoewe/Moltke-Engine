@@ -299,3 +299,44 @@ impl fmt::Display for ReplayError {
 }
 
 impl std::error::Error for ReplayError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{CommandAction, CountryId, CountryTag, PlayerId};
+
+    #[test]
+    fn replay_checkpoint_matches_rebuilt_same_seed_scenario() {
+        let initial = Simulation::new(17);
+        let command = QueuedCommand::new(
+            Tick(1),
+            PlayerId(1),
+            0,
+            CommandAction::AddCountry {
+                country_id: CountryId(1),
+                tag: CountryTag::new("AA").expect("valid tag"),
+            },
+        );
+        let mut replay = Replay::new(&initial).expect("valid initial replay");
+        replay
+            .record_command(command.clone())
+            .expect("record scenario command");
+
+        let mut simulation = initial;
+        simulation
+            .schedule_command(command)
+            .expect("schedule scenario command");
+        simulation.step().expect("advance scenario");
+        replay
+            .record_checkpoint(&simulation)
+            .expect("record checkpoint");
+
+        let report = replay
+            .verify_until(Tick(1))
+            .expect("same seed scenario replays exactly");
+        assert_eq!(
+            report.final_hash,
+            simulation.canonical_state_hash().expect("state hash")
+        );
+    }
+}

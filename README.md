@@ -16,6 +16,7 @@ The 1.0 direction is a complete engine workflow for an original reference strate
 - Bounded trigger expressions, saved pending event choices, repeat/cooldown rules, and deterministic command-based event effects.
 - Version 6 JSON simulation saves with migration from versions 3 through 5.
 - TOML package manifests, stable dependency resolution, a layered virtual filesystem, override diagnostics, and localization fallback.
+- A deterministic TOML system schedule, validated Rust runtime handlers, and a content fingerprint covering effective mounted paths, sources, and bytes.
 - Lua 5.4 command execution against read-only country/province snapshots, isolated VMs, disabled implicit randomness, memory caps, and instruction budgets.
 - Initial optional diplomacy, economy, population, and unit-movement state, plus deterministic parallel utility scoring.
 - `Campaign::advance_tick` coordinates event evaluation, core commands, and enabled gameplay modules in a fixed phase order. Economy changes are planned before commit so arithmetic errors do not leave partial production or population consumption.
@@ -32,6 +33,7 @@ The 1.0 direction is a complete engine workflow for an original reference strate
 - `Campaign::advance_tick`: deterministic orchestration across events, the core tick, and gameplay modules.
 - `moltke-ai`: deterministic utility scoring and command ordering.
 - `moltke-presentation`: renderer-neutral map snapshots and data-bound UI payloads.
+- `moltke-runtime`: validates Rust system handlers against the TOML schedule, plans each handler against one immutable snapshot, and queues the resulting typed command batch for the next tick.
 
 ## Build
 

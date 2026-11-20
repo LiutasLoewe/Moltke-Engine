@@ -4,13 +4,15 @@
 
 **Implemented:** fixed-step simulation, host pacing clock, configurable tick-to-calendar mapping, ordered commands, seeded RNG, canonical state checksum, JSON replay/verification API, version 6 saves with versions 3–5 read compatibility, genre-neutral entities and typed component fields, generic graph, Dijkstra/A*, fixed-point modifiers, and a data-defined deterministic phase/dependency schedule registry.
 
-**Still required:** bind scheduled IDs to registered runtime system implementations, move all authoritative updates behind command/system APIs, and measure the 100,000-node / 1-million-object performance target.
+**Implemented:** `moltke-runtime` binds scheduled IDs to Rust handlers, gives each system a deterministic state/tick/ID-derived random stream, collects typed commands against a shared immutable snapshot, and commits the bounded command batch before advancing. Planning errors leave the queue and tick unchanged.
+
+**Still required:** route all gameplay/event updates through the general runtime API and measure the 100,000-node / 1-million-object performance target.
 
 ## Milestone 2 — Content and event runtime
 
 **Implemented:** TOML parsing, game/mod manifests, deterministic transitive mod ordering, layered virtual files with override diagnostics, localization fallback, Lua 5.4 isolated command chunks, serializable pending events, bounded triggers, once/cooldown behavior, event options, and command-based effect scheduling.
 
-**Still required:** on-actions, decision and mission/research systems, richer schema diagnostics, content/script hashes, hot reload, and comprehensive command validation against a loaded game definition.
+**Still required:** on-actions, decision and mission/research systems, richer schema diagnostics, hot reload, and comprehensive command validation against a loaded game definition. The VFS now exposes a deterministic non-cryptographic fingerprint of the effective content tree for compatibility checks.
 
 ## Milestone 3 — Maps, gameplay, and AI
 

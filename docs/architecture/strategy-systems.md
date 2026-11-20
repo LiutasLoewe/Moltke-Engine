@@ -5,14 +5,15 @@ Names such as country, province, army, corporation, or population belong to game
 ## Crate boundaries
 
 - `moltke-core`: ticks, commands, graph, modifiers, triggers, event save state, saves, replays, and state hashes. It does not depend on a renderer, Lua VM, image decoder, or network stack.
-- `moltke-content`: TOML parsing, game/mod manifests, deterministic dependency order, layered VFS, override reports, and localization lookup.
+- `moltke-content`: TOML parsing, game/mod manifests, deterministic dependency order, layered VFS, override reports, localization lookup, and ordered simulation-system schedules.
+- `moltke-runtime`: binds system IDs to compiled Rust handlers, derives per-system deterministic random streams, and applies planned command batches at tick boundaries.
 - `moltke-modding`: constrained Lua 5.4 chunks that read snapshots and return typed core commands.
 - `moltke-events`: event definitions, trigger evaluation, cooldown/once policy, player options, and effect scheduling.
 - `moltke-map`: PNG/BMP RGB region and grayscale heightmap import, adjacency graph construction, and seeded grid generation.
 - `moltke-gameplay`: optional diplomacy, economy/production, population needs, military movement, and campaign save bundling.
 - `moltke-ai`: parallel utility scoring over immutable candidates and deterministic result ordering.
 
-Renderer/UI, editor, observer and host application crates are still to be built. Gameplay data is serializable, but a general registration API for systems and gameplay commands is still needed.
+Renderer/UI, editor, observer and host application crates are still to be built. The runtime API handles generic core systems; adapters for current event and gameplay modules remain to be added.
 
 ## Maps and pathfinding
 
@@ -40,6 +41,6 @@ Simulation saves use versioned JSON. Version 4 adds event runtime state and read
 
 The host controls wall-clock pacing; only integer ticks enter simulation. Commands are ordered by tick/player/sequence. Worker calculations read immutable input and sort results before commands are queued. Rendering, caches, locale resolution, and wall-clock speed remain outside authoritative state.
 
-Multiplayer transport is after 1.0. Before any lockstep claim, Moltke still needs deterministic full-tick orchestration across gameplay modules, cross-build replay checks, content/module/script hashes, and desync diagnostics with a pinned compatibility contract.
+Multiplayer transport is after 1.0. Before any lockstep claim, Moltke still needs deterministic full-tick orchestration across gameplay modules, cross-build replay checks, a pinned compatibility contract, and desync diagnostics. The VFS content fingerprint is non-cryptographic and does not establish trust in a mod publisher.
 
 The TOML map snippets in earlier design notes are schema sketches; no general node/edge TOML loader exists yet. Current map import consumes RGB/heightmap image files and an in-memory palette.
