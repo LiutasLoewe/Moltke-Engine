@@ -12,6 +12,7 @@ mod model;
 mod rng;
 mod save;
 mod simulation;
+mod trigger;
 
 pub use command::{CommandAction, CommandError, CommandOutcome, QueuedCommand};
 pub use map_graph::{EdgeId, GraphError, MapEdge, MapGraph, MapNode, NodeId, Path, Position3};
@@ -21,3 +22,4 @@ pub use model::{Country, Province, StateValidationError, WorldState};
 pub use rng::DeterministicRng;
 pub use save::SaveError;
 pub use simulation::{ClockError, QueueError, Simulation};
+pub use trigger::{Comparison, TriggerError, TriggerExpr};
