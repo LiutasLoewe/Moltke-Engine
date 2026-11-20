@@ -10,6 +10,8 @@ The goal is a focused strategy engine: reusable simulation, world data, modding,
 - Ordered player commands, applied in a stable order at their scheduled tick.
 - Integer IDs, ordered maps, and a seeded PRNG to support repeatable simulation.
 - Initial country and province state, with ownership and stability commands.
+- Generic directed map graph with integer coordinates, weighted edges, validation, and deterministic Dijkstra pathfinding.
+- Generic fixed-point modifiers with additive/multiplicative operations, sources, expiry, and per-tick derived caching.
 - Versioned JSON save and load for simulation state and pending commands, with validation on load.
 - A separate Lua 5.4 crate using Rust bindings, a restricted standard-library subset, memory limits, and an instruction budget.
 
@@ -19,6 +21,7 @@ The goal is a focused strategy engine: reusable simulation, world data, modding,
 - crates/moltke-modding: constrained Lua runtime foundation.
 - docs/architecture/overview.md: architecture boundaries and determinism rules.
 - docs/architecture/modding-and-scripting.md: data-plus-Lua modding direction.
+- docs/architecture/strategy-systems.md: genre-agnostic architecture and content sketches.
 - docs/development/roadmap.md: staged development plan.
 
 ## Build
