@@ -108,7 +108,16 @@ impl ModifierSet {
         let expired: Vec<_> = self.modifiers.iter()
             .filter(|(_, m)| m.expires_at.is_some_and(|end| end <= now))
             .map(|(id, _)| *id).collect();
-        for id in &expired { let _ = self.remove(*id); }
+        for id in &expired {
+            if let Some(modifier) = self.modifiers.remove(id) {
+                let key = (modifier.target, modifier.stat);
+                if let Some(ids) = self.by_target_stat.get_mut(&key) {
+                    ids.remove(id);
+                    if ids.is_empty() { self.by_target_stat.remove(&key); }
+                }
+            }
+        }
+        if !expired.is_empty() { self.clear_cache(); }
         expired.len()
     }
 
@@ -144,7 +153,7 @@ impl ModifierSet {
 
     pub fn modifiers(&self) -> &BTreeMap<ModifierId, Modifier> { &self.modifiers }
 
-    pub(crate) fn rebuild_index(&mut self) -> Result<(), ModifierError> {
+    /// Rebuilds the derived lookup after deserializing a standalone ModifierSet.\n    pub fn rebuild_index(&mut self) -> Result<(), ModifierError> {
         let mut index: BTreeMap<(EntityId, StatId), BTreeSet<ModifierId>> = BTreeMap::new();
         for (id, modifier) in &self.modifiers {
             if id != &modifier.id { return Err(ModifierError::CorruptIndex); }
