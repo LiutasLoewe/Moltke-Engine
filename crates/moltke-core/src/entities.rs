@@ -266,4 +266,3 @@ mod tests {
         assert_eq!(result, Err(EntityStoreError::UnknownReference(EntityId(2))));
     }
 }
-

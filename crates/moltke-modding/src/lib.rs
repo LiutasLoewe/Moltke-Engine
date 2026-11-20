@@ -413,4 +413,3 @@ fn optional_u64(table: &Table, key: &str) -> mlua::Result<Option<u64>> {
         ))),
     }
 }
-

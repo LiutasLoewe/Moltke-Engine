@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 9157)
-Total output lines: 1065
-
 //! Optional, genre-neutral gameplay state and deterministic rule helpers.
 
 use moltke_core::{
@@ -470,7 +467,139 @@ impl EconomyState {
                 let mut updated = Vec::with_capacity(deltas.len());
                 for (resource, delta) in deltas {
                     let key = (rule.owner, resource.clone());
-      …1157 tokens truncated…  return Err(GameplayError::RelationOutOfRange(value));
+                    let current = plan
+                        .inventory_updates
+                        .get(&key)
+                        .copied()
+                        .or_else(|| self.inventory.get(&key).copied())
+                        .unwrap_or(0);
+                    let amount = i128::from(current)
+                        .checked_add(delta)
+                        .ok_or(GameplayError::ArithmeticOverflow)?;
+                    let amount =
+                        i64::try_from(amount).map_err(|_| GameplayError::ArithmeticOverflow)?;
+                    if amount < 0 {
+                        return Err(GameplayError::NegativeStock(rule.owner, resource));
+                    }
+                    updated.push((key, amount));
+                }
+                plan.inventory_updates.extend(updated);
+                plan.production.push(ProductionResult {
+                    rule_id: rule.id,
+                    cycles,
+                });
+            }
+        }
+
+        if consume_needs {
+            for group in self.populations.values() {
+                for (resource, per_1000) in &group.needs_per_1000 {
+                    let demand = u128::from(group.size) * u128::from(*per_1000);
+                    let requested = i64::try_from(demand.div_ceil(1_000))
+                        .map_err(|_| GameplayError::ArithmeticOverflow)?;
+                    let key = (group.inventory_owner, resource.clone());
+                    let available = plan
+                        .inventory_updates
+                        .get(&key)
+                        .copied()
+                        .or_else(|| self.inventory.get(&key).copied())
+                        .unwrap_or(0);
+                    let consumed = requested.min(available);
+                    plan.inventory_updates.insert(key, available - consumed);
+                    plan.population_needs.push(NeedOutcome {
+                        population_id: group.id,
+                        resource: resource.clone(),
+                        requested,
+                        consumed,
+                        unmet: requested - consumed,
+                    });
+                }
+            }
+        }
+        Ok(plan)
+    }
+
+    fn commit_inventory_updates(&mut self, updates: BTreeMap<(EntityId, ResourceId), i64>) {
+        self.inventory.extend(updates);
+    }
+
+    pub fn validate(&self) -> Result<(), GameplayError> {
+        for ((_, resource), amount) in &self.inventory {
+            ResourceId::new(resource.as_str())?;
+            if *amount < 0 {
+                return Err(GameplayError::InvalidInventory(resource.clone()));
+            }
+        }
+        for (id, rule) in &self.production_rules {
+            if *id != rule.id {
+                return Err(GameplayError::InvalidProductionRule(*id));
+            }
+            rule.validate()?;
+        }
+        for (id, group) in &self.populations {
+            if *id != group.id {
+                return Err(GameplayError::InvalidPopulation(*id));
+            }
+            group.validate()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProductionResult {
+    pub rule_id: u64,
+    pub cycles: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NeedOutcome {
+    pub population_id: EntityId,
+    pub resource: ResourceId,
+    pub requested: i64,
+    pub consumed: i64,
+    pub unmet: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Treaty {
+    pub id: u64,
+    pub kind: String,
+    pub parties: BTreeSet<EntityId>,
+    pub signed_at: Tick,
+    pub expires_at: Option<Tick>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct War {
+    pub id: u64,
+    pub casus_belli: String,
+    pub attackers: BTreeSet<EntityId>,
+    pub defenders: BTreeSet<EntityId>,
+    /// Warscore in basis points, bounded to -10,000..=10,000.
+    pub warscore_bp: i16,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiplomacyState {
+    relations: BTreeMap<(EntityId, EntityId), i16>,
+    treaties: BTreeMap<u64, Treaty>,
+    wars: BTreeMap<u64, War>,
+}
+
+impl DiplomacyState {
+    pub fn relation(&self, from: EntityId, to: EntityId) -> i16 {
+        self.relations.get(&(from, to)).copied().unwrap_or(0)
+    }
+
+    pub fn set_relation(
+        &mut self,
+        from: EntityId,
+        to: EntityId,
+        value: i16,
+    ) -> Result<(), GameplayError> {
+        if !(-10_000..=10_000).contains(&value) {
+            return Err(GameplayError::RelationOutOfRange(value));
         }
         self.relations.insert((from, to), value);
         Ok(())
@@ -933,4 +1062,3 @@ mod tests {
         assert_eq!(report.gameplay.population_needs[0].consumed, 1);
     }
 }
-

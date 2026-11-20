@@ -36,4 +36,3 @@ pub use rng::DeterministicRng;
 pub use save::SaveError;
 pub use simulation::{ClockError, QueueError, Simulation};
 pub use trigger::{Comparison, TriggerError, TriggerExpr};
-
