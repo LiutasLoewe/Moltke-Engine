@@ -11,7 +11,8 @@ The goal is a focused strategy engine: reusable simulation, world data, modding,
 - Integer IDs, ordered maps, and a seeded PRNG to support repeatable simulation.
 - Initial country and province state, with ownership and stability commands.
 - Generic directed map graph with integer coordinates, weighted edges, validation, and deterministic Dijkstra pathfinding.
-- Generic fixed-point modifiers with additive/multiplicative operations, sources, expiry, and per-tick derived caching.
+- Generic fixed-point base stats and modifiers with additive/multiplicative operations, sources, expiry, and per-tick derived caching.
+- Bounded serializable trigger expressions for tick and stat comparisons, composed with all/any/not.
 - Versioned JSON save and load for simulation state and pending commands, with validation on load.
 - A separate Lua 5.4 crate using Rust bindings, a restricted standard-library subset, memory limits, and an instruction budget.
 
