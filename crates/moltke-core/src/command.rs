@@ -1,4 +1,4 @@
-use crate::{CountryId, CountryTag, PlayerId, ProvinceId, Tick};
+use crate::{CountryId, CountryTag, EntityId, Fixed, Modifier, ModifierError, ModifierId, PlayerId, ProvinceId, StatId, Tick};
 use serde::{Deserialize, Serialize};
 
 /// A game-specific mutation requested for a future simulation tick.
@@ -20,6 +20,9 @@ pub enum CommandAction {
         country_id: CountryId,
         stability_bp: i16,
     },
+    SetStat { entity: EntityId, stat: StatId, value: Fixed },
+    AddModifier { modifier: Modifier },
+    RemoveModifier { modifier_id: ModifierId },
 }
 
 /// Command order is tick, player ID, then sequence.
@@ -55,6 +58,8 @@ pub enum CommandError {
     DuplicateProvince(ProvinceId),
     UnknownProvince(ProvinceId),
     StabilityOutOfRange(i16),
+    InvalidStatId(String),
+    Modifier(ModifierError),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
