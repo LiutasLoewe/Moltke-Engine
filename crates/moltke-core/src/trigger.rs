@@ -59,7 +59,8 @@ impl TriggerExpr {
             TriggerExpr::Always => Ok(true),
             TriggerExpr::TickAtLeast(tick) => Ok(state.tick() >= *tick),
             TriggerExpr::StatCompare { entity, stat, comparison, value } => {
-                let actual = state.stat_value(*entity, stat, state.tick())
+                let now = state.tick();
+                let actual = state.stat_value(*entity, stat, now)
                     .map_err(TriggerError::Modifier)?;
                 Ok(match comparison {
                     Comparison::Equal => actual == *value,
