@@ -27,7 +27,9 @@ pub struct WorldState {
     pub(crate) rng: DeterministicRng,
     pub(crate) countries: BTreeMap<CountryId, Country>,
     pub(crate) provinces: BTreeMap<ProvinceId, Province>,
+    #[serde(default)]
     pub(crate) map: MapGraph,
+    #[serde(default)]
     pub(crate) modifiers: ModifierSet,
 }
 
