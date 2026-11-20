@@ -448,8 +448,12 @@ impl VirtualFileSystem {
     pub fn fingerprint(&self) -> ContentFingerprint {
         const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
         const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let mut lanes = [OFFSET, OFFSET ^ 0x9e37_79b9_7f4a_7c15,
-            OFFSET ^ 0xbf58_476d_1ce4_e5b9, OFFSET ^ 0x94d0_49bb_1331_11eb];
+        let mut lanes = [
+            OFFSET,
+            OFFSET ^ 0x9e37_79b9_7f4a_7c15,
+            OFFSET ^ 0xbf58_476d_1ce4_e5b9,
+            OFFSET ^ 0x94d0_49bb_1331_11eb,
+        ];
 
         for (path, file) in &self.files {
             update_fingerprint(&mut lanes, path.as_bytes(), PRIME);

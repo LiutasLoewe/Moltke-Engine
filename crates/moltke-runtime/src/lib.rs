@@ -7,8 +7,8 @@
 
 use moltke_content::{ContentError, SystemRegistry};
 use moltke_core::{
-    CanonicalStateHash, CommandAction, CommandOutcome, DeterministicRng, PlayerId, QueuedCommand,
-    QueueError, Simulation, Tick, WorldState,
+    CanonicalStateHash, CommandAction, CommandOutcome, DeterministicRng, PlayerId, QueueError,
+    QueuedCommand, Simulation, Tick, WorldState,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -182,8 +182,10 @@ fn system_seed(state_hash: CanonicalStateHash, tick: Tick, system_id: &str) -> u
 }
 
 fn system_sequence(system_index: usize, command_index: usize) -> Result<u64, RuntimeHostError> {
-    let system_index = u64::try_from(system_index).map_err(|_| RuntimeHostError::SequenceOverflow)?;
-    let command_index = u64::try_from(command_index).map_err(|_| RuntimeHostError::SequenceOverflow)?;
+    let system_index =
+        u64::try_from(system_index).map_err(|_| RuntimeHostError::SequenceOverflow)?;
+    let command_index =
+        u64::try_from(command_index).map_err(|_| RuntimeHostError::SequenceOverflow)?;
     if command_index >= COMMAND_SEQUENCE_STRIDE {
         return Err(RuntimeHostError::SequenceOverflow);
     }
@@ -283,12 +285,7 @@ mod tests {
             id: "world.random_stat",
             stat: StatId::new("test_roll").expect("valid stat ID"),
         })];
-        RuntimeHost::new(
-            registry,
-            None,
-            systems,
-        )
-        .expect("valid runtime host")
+        RuntimeHost::new(registry, None, systems).expect("valid runtime host")
     }
 
     #[test]
@@ -328,8 +325,7 @@ mod tests {
 
         let registry = registry();
         let systems: Vec<Box<dyn RuntimeSystem>> = vec![Box::new(FailingSystem)];
-        let host = RuntimeHost::new(&registry, None, systems)
-            .expect("valid runtime host");
+        let host = RuntimeHost::new(&registry, None, systems).expect("valid runtime host");
         let mut simulation = Simulation::new(42);
 
         assert!(matches!(
