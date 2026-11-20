@@ -1,38 +1,22 @@
 # Development roadmap
 
-This is a staged plan; later systems depend on a small, stable core.
+## Milestone 1 — Generic map graph and modifiers (current)
+- Stable directed nodes and edges, integer positions and costs, tags, graph validation, and deterministic Dijkstra.
+- Integer cost overrides and blocked edges are supplied as a precomputed table; the pathfinder never calls Lua.
+- Generic entities and stat keys, fixed-point additive and multiplicative modifiers, source attribution, expiry, stable evaluation, and a derived per-tick cache.
+- Persist both systems in simulation saves and validate them on load.
 
-## 1. Simulation foundations
+## Milestone 2 — Tick phases, events, triggers, decisions
+Freeze tick phase order and calendar adapters. Add serializable trigger expressions, threshold and scheduled checks, seeded mean-time-to-happen, on-actions, event options, and command effects. Connect Lua through snapshot-in and validated-command-out hooks. Model decisions and mission/research trees over the same trigger/effect system.
 
-- Specify tick/calendar semantics and event scheduling.
-- Add deterministic triggers, event queues, and a canonical state hash.
-- Define save migrations and replay files.
-- Add explicit module lifecycle and state validation contracts.
+## Milestone 3 — Content pipeline and mod ecosystem
+Choose a versioned data format and manifest. Add diagnostics, reference validation, stable IDs, mod dependency ordering, layered virtual filesystem and explicit override rules, localization keys and fallback, and content/script compatibility hashes. Permit hot reload only in paused single-player/editor sessions.
 
-## 2. World data
+## Milestone 4 — Optional gameplay and deterministic AI
+Add optional diplomacy and relations, conflicts, units and logistics, economy and trade, resources, populations, then utility AI. AI scores immutable snapshots, can parallelize independent calculations, then sorts outputs before command submission. Add observer runs and profiling counters.
 
-- Design compact province, region, adjacency, and map-geometry data.
-- Add deterministic pathfinding and data validation for large maps.
-- Define stable IDs and a map/scenario interchange format.
+## Milestone 5 — Presentation API, tooling, multiplayer
+Define read-only snapshots and command submission for external renderers; add map modes and nested tooltip queries. Build RGB/heightmap import, coordinate editing, procedural map adapters, scenario tools, and headless validation. Specify canonical hashes, replay format, command synchronization, pause/authority, desync reports, and compatibility. Renderer stays an adapter, not a core dependency.
 
-## 3. Content and mods
-
-- Select and version the structured data format and mod manifest.
-- Load Lua scripts through the constrained runtime.
-- Add a narrow command-building API, diagnostics, dependency ordering, and mod compatibility checks.
-
-## 4. Gameplay modules
-
-Build independent modules in vertical slices: countries and government, diplomacy and wars, economy and trade, populations, military movement and supply, then strategic AI. Measure performance with representative large worlds before adding parallel execution.
-
-## 5. Presentation and tooling
-
-Compare Rust rendering frameworks against the map and UI requirements. Build map modes, overlays, data-driven panels and tooltips, then a map/scenario editor. Keep the simulation headless-capable.
-
-## 6. Multiplayer
-
-Only after deterministic command processing and canonical state hashing are stable: define command synchronization, authority and pause rules, desync reports, save/replay compatibility, and network transport.
-
-## Scope
-
-No single language or renderer removes every engine problem. The project will aim for clear boundaries, measurable performance, reproducible simulation, contributor-friendly Rust code, and modder-friendly Lua and data files. Each later milestone needs profiling and compatibility decisions before it can be called production-ready.
+## Quality gates
+Profile representative world sizes before parallelizing simulation updates. Version IDs, command order, save migrations, and PRNG algorithms. Keep caches derived. Replay identical commands and compare canonical hashes across supported platforms before claiming lockstep support.
