@@ -239,7 +239,9 @@ impl SystemRegistry {
             .ordered
             .iter()
             .filter(|definition| {
-                enabled.map_or(definition.enabled_by_default, |set| set.contains(&definition.id))
+                enabled.map_or(definition.enabled_by_default, |set| {
+                    set.contains(&definition.id)
+                })
             })
             .collect())
     }
@@ -678,7 +680,10 @@ impl fmt::Display for ContentError {
             }
             Self::DuplicateSystem(id) => write!(formatter, "duplicate simulation system: {id}"),
             Self::TooManySystems(count) => {
-                write!(formatter, "system count {count} exceeds the supported limit")
+                write!(
+                    formatter,
+                    "system count {count} exceeds the supported limit"
+                )
             }
             Self::UnknownSystem(id) => write!(formatter, "unknown simulation system: {id}"),
             Self::InvalidSystemDependency { system, dependency } => write!(

@@ -10,7 +10,7 @@
 
 **Implemented:** TOML parsing, game/mod manifests, deterministic transitive mod ordering, layered virtual files with override diagnostics, localization fallback, Lua 5.4 isolated command chunks, serializable pending events, bounded triggers, once/cooldown behavior, event options, and command-based effect scheduling.
 
-**Still required:** on-actions, mean-time-to-happen, decision and mission/research systems, richer schema diagnostics, content/script hashes, hot reload, and comprehensive command validation against a loaded game definition.
+**Still required:** on-actions, decision and mission/research systems, richer schema diagnostics, content/script hashes, hot reload, and comprehensive command validation against a loaded game definition.
 
 ## Milestone 3 — Maps, gameplay, and AI
 
