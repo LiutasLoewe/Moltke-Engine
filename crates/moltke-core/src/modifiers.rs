@@ -1,6 +1,6 @@
 use crate::Tick;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const FIXED_SCALE: i64 = 10_000;
 
@@ -63,6 +63,7 @@ struct CacheKey { target: EntityId, stat: StatId, base: Fixed }
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ModifierSet {
     modifiers: BTreeMap<ModifierId, Modifier>,
+    by_target_stat: BTreeMap<(EntityId, StatId), BTreeSet<ModifierId>>,
     #[serde(skip, default)]
     cache_tick: Option<Tick>,
     #[serde(skip, default)]
@@ -77,23 +78,37 @@ impl ModifierSet {
             return Err(ModifierError::InvalidMultiplier(modifier.id));
         }
         if self.modifiers.contains_key(&modifier.id) { return Err(ModifierError::DuplicateId(modifier.id)); }
-        self.modifiers.insert(modifier.id, modifier);
+        let id = modifier.id;
+        let key = (modifier.target, modifier.stat.clone());
+        self.modifiers.insert(id, modifier);
+        self.by_target_stat.entry(key).or_default().insert(id);
         self.clear_cache();
         Ok(())
     }
 
     pub fn remove(&mut self, id: ModifierId) -> Result<Modifier, ModifierError> {
-        let result = self.modifiers.remove(&id).ok_or(ModifierError::UnknownId(id))?;
+        let modifier = self.modifiers.get(&id).ok_or(ModifierError::UnknownId(id))?;
+        let key = (modifier.target, modifier.stat.clone());
+        if !self.by_target_stat.get(&key).is_some_and(|ids| ids.contains(&id)) {
+            return Err(ModifierError::CorruptIndex);
+        }
+        let removed = self.modifiers.remove(&id).ok_or(ModifierError::UnknownId(id))?;
+        let empty = {
+            let ids = self.by_target_stat.get_mut(&key).ok_or(ModifierError::CorruptIndex)?;
+            ids.remove(&id);
+            ids.is_empty()
+        };
+        if empty { self.by_target_stat.remove(&key); }
         self.clear_cache();
-        Ok(result)
+        Ok(removed)
     }
 
     pub fn remove_expired(&mut self, now: Tick) -> usize {
-        let before = self.modifiers.len();
-        self.modifiers.retain(|_, m| m.expires_at.is_none_or(|end| end > now));
-        let count = before - self.modifiers.len();
-        if count > 0 { self.clear_cache(); }
-        count
+        let expired: Vec<_> = self.modifiers.iter()
+            .filter(|(_, m)| m.expires_at.is_some_and(|end| end <= now))
+            .map(|(id, _)| *id).collect();
+        for id in &expired { let _ = self.remove(*id); }
+        expired.len()
     }
 
     /// Additive values are summed first; factors apply in ModifierId order.
@@ -105,14 +120,18 @@ impl ModifierSet {
         let key = CacheKey { target, stat: stat.clone(), base };
         if let Some(result) = self.cache.get(&key) { return Ok(*result); }
 
-        let active = |m: &&Modifier| m.target == target && m.stat == *stat
-            && m.expires_at.is_none_or(|end| now < end);
+        let ids = self.by_target_stat.get(&(target, stat.clone())).cloned().unwrap_or_default();
+        let matching: Vec<&Modifier> = ids.iter()
+            .map(|id| self.modifiers.get(id).ok_or(ModifierError::CorruptIndex))
+            .collect::<Result<_, _>>()?;
         let mut value = i128::from(base.raw());
-        for m in self.modifiers.values().filter(active).filter(|m| m.kind == ModifierKind::Additive) {
+        for m in matching.iter().filter(|m|
+            m.kind == ModifierKind::Additive && m.expires_at.is_none_or(|end| now < end)) {
             value = value.checked_add(i128::from(m.value.raw())).ok_or(ModifierError::ArithmeticOverflow)?;
         }
         let mut value = i64::try_from(value).map_err(|_| ModifierError::ArithmeticOverflow)?;
-        for m in self.modifiers.values().filter(active).filter(|m| m.kind == ModifierKind::Multiplicative) {
+        for m in matching.iter().filter(|m|
+            m.kind == ModifierKind::Multiplicative && m.expires_at.is_none_or(|end| now < end)) {
             let product = i128::from(value).checked_mul(i128::from(m.value.raw()))
                 .ok_or(ModifierError::ArithmeticOverflow)? / i128::from(FIXED_SCALE);
             value = i64::try_from(product).map_err(|_| ModifierError::ArithmeticOverflow)?;
@@ -125,7 +144,9 @@ impl ModifierSet {
     pub fn modifiers(&self) -> &BTreeMap<ModifierId, Modifier> { &self.modifiers }
 
     pub fn validate(&self) -> Result<(), ModifierError> {
+        let mut expected: BTreeMap<(EntityId, StatId), BTreeSet<ModifierId>> = BTreeMap::new();
         for (id, m) in &self.modifiers {
+            expected.entry((m.target, m.stat.clone())).or_default().insert(*id);
             if id != &m.id { return Err(ModifierError::CorruptIndex); }
             StatId::new(m.stat.as_str())?;
             if m.source.trim().is_empty() { return Err(ModifierError::EmptySource); }
@@ -133,6 +154,7 @@ impl ModifierSet {
                 return Err(ModifierError::InvalidMultiplier(*id));
             }
         }
+        if expected != self.by_target_stat { return Err(ModifierError::CorruptIndex); }
         Ok(())
     }
 
