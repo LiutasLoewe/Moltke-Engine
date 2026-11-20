@@ -2,7 +2,7 @@ use crate::simulation::LoadValidationError;
 use crate::Simulation;
 use serde::{Deserialize, Serialize};
 
-const SAVE_FORMAT_VERSION: u32 = 1;
+const SAVE_FORMAT_VERSION: u32 = 2;
 const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Serialize, Deserialize)]
