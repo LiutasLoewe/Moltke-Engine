@@ -6,8 +6,11 @@
 - Generic entities and stat keys, fixed-point additive and multiplicative modifiers, source attribution, expiry, stable evaluation, and a derived per-tick cache.
 - Persist both systems in simulation saves and validate them on load.
 
-## Milestone 2 — Tick phases, events, triggers, decisions
-Freeze tick phase order and calendar adapters. Add serializable trigger expressions, threshold and scheduled checks, seeded mean-time-to-happen, on-actions, event options, and command effects. Connect Lua through snapshot-in and validated-command-out hooks. Model decisions and mission/research trees over the same trigger/effect system.
+## Milestone 2 — Tick phases, events, triggers, decisions (in progress)
+- Implemented: generic fixed-point base stats, stat/modifier commands, and a bounded serializable trigger AST for tick and stat comparisons with All/Any/Not.
+- Next: serializable event definitions and pending choices, scheduled trigger evaluation and on-actions, deterministic mean-time-to-happen, and command effects.
+- Then: Lua snapshot-in and validated-command-out hooks; decisions and mission/research trees over the shared trigger/effect system.
+- Still needed: define and version the exact simulation phase order before modules rely on it.
 
 ## Milestone 3 — Content pipeline and mod ecosystem
 Choose a versioned data format and manifest. Add diagnostics, reference validation, stable IDs, mod dependency ordering, layered virtual filesystem and explicit override rules, localization keys and fallback, and content/script compatibility hashes. Permit hot reload only in paused single-player/editor sessions.
