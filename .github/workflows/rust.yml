@@ -1,0 +1,28 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Format and compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install stable Rust tools
+        run: |
+          rustup update stable --no-self-update
+          rustup component add rustfmt clippy --toolchain stable
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Compile workspace
+        run: cargo check --workspace --all-targets
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
