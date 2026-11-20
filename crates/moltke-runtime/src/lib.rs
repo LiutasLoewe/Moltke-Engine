@@ -279,13 +279,14 @@ mod tests {
     }
 
     fn host(registry: &SystemRegistry) -> RuntimeHost {
+        let systems: Vec<Box<dyn RuntimeSystem>> = vec![Box::new(RandomStatSystem {
+            id: "world.random_stat",
+            stat: StatId::new("test_roll").expect("valid stat ID"),
+        })];
         RuntimeHost::new(
             registry,
             None,
-            vec![Box::new(RandomStatSystem {
-                id: "world.random_stat",
-                stat: StatId::new("test_roll").expect("valid stat ID"),
-            })],
+            systems,
         )
         .expect("valid runtime host")
     }
@@ -326,7 +327,8 @@ mod tests {
         }
 
         let registry = registry();
-        let host = RuntimeHost::new(&registry, None, vec![Box::new(FailingSystem)])
+        let systems: Vec<Box<dyn RuntimeSystem>> = vec![Box::new(FailingSystem)];
+        let host = RuntimeHost::new(&registry, None, systems)
             .expect("valid runtime host");
         let mut simulation = Simulation::new(42);
 
