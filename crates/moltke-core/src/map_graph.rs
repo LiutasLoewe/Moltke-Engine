@@ -34,8 +34,9 @@ pub struct MapEdge {
 pub struct MapGraph {
     nodes: BTreeMap<NodeId, MapNode>,
     edges: BTreeMap<EdgeId, MapEdge>,
+    #[serde(skip, default)]
     outgoing: BTreeMap<NodeId, BTreeSet<EdgeId>>,
-    #[serde(default)]
+    #[serde(skip, default)]
     node_keys: BTreeMap<String, NodeId>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -117,6 +118,30 @@ impl MapGraph {
         }
         nodes.reverse(); edges.reverse();
         Ok(Some(Path { nodes, edges, total_cost }))
+    }
+
+    /// Recreates adjacency and key indexes after deserializing graph data.
+    pub fn rebuild_indexes(&mut self) -> Result<(), GraphError> {
+        let mut outgoing: BTreeMap<NodeId, BTreeSet<EdgeId>> =
+            self.nodes.keys().map(|id| (*id, BTreeSet::new())).collect();
+        let mut node_keys = BTreeMap::new();
+        for (id, node) in &self.nodes {
+            if *id != node.id { return Err(GraphError::CorruptAdjacency); }
+            if node.key.trim().is_empty() { return Err(GraphError::EmptyNodeKey); }
+            if node_keys.insert(node.key.clone(), *id).is_some() {
+                return Err(GraphError::DuplicateNodeKey(node.key.clone()));
+            }
+        }
+        for (id, edge) in &self.edges {
+            if *id != edge.id { return Err(GraphError::CorruptAdjacency); }
+            if edge.base_cost == 0 { return Err(GraphError::InvalidBaseCost(edge.id)); }
+            let Some(edges) = outgoing.get_mut(&edge.from) else { return Err(GraphError::MissingEndpoint(edge.from)); };
+            if !self.nodes.contains_key(&edge.to) { return Err(GraphError::MissingEndpoint(edge.to)); }
+            edges.insert(*id);
+        }
+        self.outgoing = outgoing;
+        self.node_keys = node_keys;
+        Ok(())
     }
 
     pub fn validate(&self) -> Result<(), GraphError> {
