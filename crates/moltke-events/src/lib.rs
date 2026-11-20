@@ -1,447 +1,1 @@
-//! Data-driven triggers, events, and player choices.
-//!
-//! Event definitions are immutable game content. Pending choices, cooldowns,
-//! and once-only completion state live in `moltke-core` and therefore travel
-//! with normal simulation saves.
-
-use moltke_content::{ContentError, parse_toml};
-use moltke_core::{
-    CommandAction, EventId, EventInstanceId, EventStateError, PlayerId, QueueError, QueuedCommand,
-    Simulation, Tick, TriggerError, TriggerExpr,
-};
-use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EventOption {
-    pub id: String,
-    pub localization_key: String,
-    #[serde(default)]
-    pub effects: Vec<CommandAction>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EventDefinition {
-    pub id: EventId,
-    pub recipient: PlayerId,
-    pub trigger: TriggerExpr,
-    #[serde(default = "default_once")]
-    pub once: bool,
-    #[serde(default)]
-    pub cooldown_ticks: Option<u64>,
-    /// Optional geometric hazard interval. A value of N gives the event a
-    /// deterministic seeded probability of 1/N on each eligible tick.
-    #[serde(default)]
-    pub mean_time_to_happen_ticks: Option<u64>,
-    pub options: Vec<EventOption>,
-}
-
-fn default_once() -> bool {
-    true
-}
-
-impl EventDefinition {
-    fn validate(&self) -> Result<(), EventCatalogError> {
-        EventId::new(self.id.as_str()).map_err(EventCatalogError::InvalidEventId)?;
-        self.trigger
-            .validate()
-            .map_err(EventCatalogError::Trigger)?;
-        if self.options.is_empty() {
-            return Err(EventCatalogError::NoOptions(self.id.clone()));
-        }
-        if self.options.len() > 4_095 {
-            return Err(EventCatalogError::TooManyOptions(self.id.clone()));
-        }
-        if !self.once && self.cooldown_ticks.is_none_or(|cooldown| cooldown == 0) {
-            return Err(EventCatalogError::RepeatNeedsCooldown(self.id.clone()));
-        }
-        if self.mean_time_to_happen_ticks == Some(0) {
-            return Err(EventCatalogError::InvalidMeanTimeToHappen(self.id.clone()));
-        }
-        let mut ids = std::collections::BTreeSet::new();
-        for option in &self.options {
-            if !valid_option_id(&option.id) || !ids.insert(option.id.as_str()) {
-                return Err(EventCatalogError::InvalidOptionId {
-                    event_id: self.id.clone(),
-                    option_id: option.id.clone(),
-                });
-            }
-            if option.localization_key.trim().is_empty() {
-                return Err(EventCatalogError::EmptyLocalizationKey(self.id.clone()));
-            }
-        }
-        Ok(())
-    }
-}
-
-fn valid_option_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 96
-        && value.as_bytes()[0].is_ascii_lowercase()
-        && value.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-' | b'.')
-        })
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct EventCatalog {
-    definitions: BTreeMap<EventId, EventDefinition>,
-}
-
-impl EventCatalog {
-    pub fn insert(&mut self, definition: EventDefinition) -> Result<(), EventCatalogError> {
-        definition.validate()?;
-        if self.definitions.contains_key(&definition.id) {
-            return Err(EventCatalogError::DuplicateEvent(definition.id));
-        }
-        self.definitions.insert(definition.id.clone(), definition);
-        Ok(())
-    }
-
-    pub fn get(&self, id: &EventId) -> Option<&EventDefinition> {
-        self.definitions.get(id)
-    }
-
-    pub fn definitions(&self) -> &BTreeMap<EventId, EventDefinition> {
-        &self.definitions
-    }
-
-    pub fn from_toml(path: &str, source: &str) -> Result<Self, EventLoadError> {
-        let file: EventFile = parse_toml(path, source).map_err(EventLoadError::Content)?;
-        let mut catalog = Self::default();
-        for definition in file.events {
-            catalog
-                .insert(definition)
-                .map_err(EventLoadError::Catalog)?;
-        }
-        Ok(catalog)
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EventFile {
-    #[serde(default)]
-    events: Vec<EventDefinition>,
-}
-
-/// Runs event triggers at a simulation boundary and turns player choices into
-/// atomically queued simulation commands.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct EventEngine;
-
-impl EventEngine {
-    pub fn evaluate(
-        &self,
-        simulation: &mut Simulation,
-        catalog: &EventCatalog,
-    ) -> Result<Vec<QueuedCommand>, EventEngineError> {
-        let now = simulation.state().tick();
-        let target_tick = Tick(now.0.checked_add(1).ok_or(EventEngineError::TickOverflow)?);
-        // Player zero is reserved for deterministic engine-generated commands.
-        let system_player = PlayerId(0);
-        let mut used_sequences: BTreeSet<u64> = simulation
-            .queued_commands()
-            .iter()
-            .filter(|command| command.tick == target_tick && command.player_id == system_player)
-            .map(|command| command.sequence)
-            .collect();
-        let already_queued: BTreeSet<EventId> = simulation
-            .queued_commands()
-            .iter()
-            .filter_map(|command| {
-                if command.tick != target_tick {
-                    return None;
-                }
-                match &command.action {
-                    CommandAction::OpenEvent { event_id, .. } => Some(event_id.clone()),
-                    _ => None,
-                }
-            })
-            .collect();
-        let mut next_sequence = 0_u64;
-        let mut commands = Vec::new();
-        for definition in catalog.definitions.values() {
-            if already_queued.contains(&definition.id) {
-                continue;
-            }
-            let can_fire = simulation.state().event_runtime().can_fire(
-                &definition.id,
-                now,
-                definition.once,
-                definition.cooldown_ticks,
-            );
-            if !can_fire {
-                continue;
-            }
-            let triggered = definition
-                .trigger
-                .evaluate(simulation.state_mut())
-                .map_err(EventEngineError::Trigger)?;
-            if triggered
-                && definition
-                    .mean_time_to_happen_ticks
-                    .is_none_or(|mean| mtth_roll_passes(simulation, mean))
-            {
-                while used_sequences.contains(&next_sequence) {
-                    next_sequence = next_sequence
-                        .checked_add(1)
-                        .ok_or(EventEngineError::SequenceOverflow)?;
-                }
-                let sequence = next_sequence;
-                used_sequences.insert(sequence);
-                commands.push(QueuedCommand::new(
-                    target_tick,
-                    system_player,
-                    sequence,
-                    CommandAction::OpenEvent {
-                        event_id: definition.id.clone(),
-                        recipient: definition.recipient,
-                        once: definition.once,
-                        cooldown_ticks: definition.cooldown_ticks,
-                    },
-                ));
-            }
-        }
-        simulation
-            .schedule_commands(commands.clone())
-            .map_err(EventEngineError::Queue)?;
-        Ok(commands)
-    }
-
-    pub fn choose(
-        &self,
-        simulation: &mut Simulation,
-        catalog: &EventCatalog,
-        instance_id: EventInstanceId,
-        player_id: PlayerId,
-        option_id: &str,
-        first_sequence: u64,
-    ) -> Result<Vec<QueuedCommand>, EventEngineError> {
-        let pending = simulation
-            .state()
-            .event_runtime()
-            .pending()
-            .get(&instance_id)
-            .cloned()
-            .ok_or(EventEngineError::UnknownInstance(instance_id))?;
-        let already_submitted = simulation.queued_commands().iter().any(|command| {
-            matches!(&command.action, CommandAction::ResolveEvent { instance_id: queued_id } if *queued_id == instance_id)
-        });
-        if already_submitted {
-            return Err(EventEngineError::ChoiceAlreadySubmitted(instance_id));
-        }
-        if pending.recipient != player_id {
-            return Err(EventEngineError::WrongRecipient {
-                instance_id,
-                expected: pending.recipient,
-                actual: player_id,
-            });
-        }
-        let definition = catalog
-            .get(&pending.event_id)
-            .ok_or_else(|| EventEngineError::MissingDefinition(pending.event_id.clone()))?;
-        let option = definition
-            .options
-            .iter()
-            .find(|option| option.id == option_id)
-            .ok_or_else(|| EventEngineError::UnknownOption {
-                event_id: pending.event_id.clone(),
-                option_id: option_id.to_owned(),
-            })?;
-
-        let target_tick = Tick(
-            simulation
-                .state()
-                .tick()
-                .0
-                .checked_add(1)
-                .ok_or(EventEngineError::TickOverflow)?,
-        );
-        let mut commands = Vec::with_capacity(option.effects.len() + 1);
-        commands.push(QueuedCommand::new(
-            target_tick,
-            player_id,
-            first_sequence,
-            CommandAction::ResolveEvent { instance_id },
-        ));
-        for (offset, action) in option.effects.iter().enumerate() {
-            let sequence = first_sequence
-                .checked_add(u64::try_from(offset).map_err(|_| EventEngineError::SequenceOverflow)?)
-                .and_then(|sequence| sequence.checked_add(1))
-                .ok_or(EventEngineError::SequenceOverflow)?;
-            commands.push(QueuedCommand::new(
-                target_tick,
-                player_id,
-                sequence,
-                action.clone(),
-            ));
-        }
-
-        simulation
-            .schedule_commands(commands.clone())
-            .map_err(EventEngineError::Queue)?;
-        Ok(commands)
-    }
-}
-
-fn mtth_roll_passes(simulation: &mut Simulation, mean_ticks: u64) -> bool {
-    let rejection_threshold = mean_ticks.wrapping_neg() % mean_ticks;
-    loop {
-        let draw = simulation.state_mut().random_u64();
-        if draw >= rejection_threshold {
-            return draw % mean_ticks == 0;
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum EventCatalogError {
-    InvalidEventId(EventStateError),
-    Trigger(TriggerError),
-    DuplicateEvent(EventId),
-    NoOptions(EventId),
-    RepeatNeedsCooldown(EventId),
-    InvalidMeanTimeToHappen(EventId),
-    TooManyOptions(EventId),
-    InvalidOptionId {
-        event_id: EventId,
-        option_id: String,
-    },
-    EmptyLocalizationKey(EventId),
-}
-
-#[derive(Debug)]
-pub enum EventLoadError {
-    Content(ContentError),
-    Catalog(EventCatalogError),
-}
-
-#[derive(Debug)]
-pub enum EventEngineError {
-    Trigger(TriggerError),
-    Queue(QueueError),
-    UnknownInstance(EventInstanceId),
-    MissingDefinition(EventId),
-    WrongRecipient {
-        instance_id: EventInstanceId,
-        expected: PlayerId,
-        actual: PlayerId,
-    },
-    UnknownOption {
-        event_id: EventId,
-        option_id: String,
-    },
-    ChoiceAlreadySubmitted(EventInstanceId),
-    TickOverflow,
-    SequenceOverflow,
-}
-
-impl fmt::Display for EventCatalogError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "invalid event catalog: {self:?}")
-    }
-}
-
-impl std::error::Error for EventCatalogError {}
-
-impl fmt::Display for EventLoadError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Content(error) => write!(formatter, "event content error: {error}"),
-            Self::Catalog(error) => write!(formatter, "event definition error: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for EventLoadError {}
-
-impl fmt::Display for EventEngineError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Trigger(error) => write!(formatter, "event trigger failed: {error:?}"),
-            Self::Queue(error) => write!(formatter, "event effects could not be queued: {error:?}"),
-            Self::UnknownInstance(id) => {
-                write!(formatter, "unknown pending event instance {}", id.0)
-            }
-            Self::MissingDefinition(id) => {
-                write!(formatter, "event definition {:?} is missing", id.as_str())
-            }
-            Self::WrongRecipient {
-                instance_id,
-                expected,
-                actual,
-            } => write!(
-                formatter,
-                "player {} cannot choose event instance {} assigned to player {}",
-                actual.0, instance_id.0, expected.0
-            ),
-            Self::UnknownOption {
-                event_id,
-                option_id,
-            } => write!(
-                formatter,
-                "event {:?} has no option {option_id:?}",
-                event_id.as_str()
-            ),
-            Self::ChoiceAlreadySubmitted(id) => write!(
-                formatter,
-                "a choice is already queued for event instance {}",
-                id.0
-            ),
-            Self::TickOverflow => {
-                formatter.write_str("simulation tick overflow while queuing event effects")
-            }
-            Self::SequenceOverflow => {
-                formatter.write_str("command sequence overflow while queuing event effects")
-            }
-        }
-    }
-}
-
-impl std::error::Error for EventEngineError {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn event_with_mtth(mean_time_to_happen_ticks: u64) -> EventDefinition {
-        EventDefinition {
-            id: EventId::new("test_event").expect("valid event id"),
-            recipient: PlayerId(1),
-            trigger: TriggerExpr::Always,
-            once: true,
-            cooldown_ticks: None,
-            mean_time_to_happen_ticks: Some(mean_time_to_happen_ticks),
-            options: vec![EventOption {
-                id: "accept".to_owned(),
-                localization_key: "event.test.accept".to_owned(),
-                effects: Vec::new(),
-            }],
-        }
-    }
-
-    #[test]
-    fn one_tick_mean_time_triggers_immediately() {
-        let mut catalog = EventCatalog::default();
-        catalog
-            .insert(event_with_mtth(1))
-            .expect("valid event definition");
-        let commands = EventEngine
-            .evaluate(&mut Simulation::new(11), &catalog)
-            .expect("valid event evaluation");
-        assert_eq!(commands.len(), 1);
-    }
-
-    #[test]
-    fn zero_mean_time_is_rejected() {
-        let mut catalog = EventCatalog::default();
-        assert!(matches!(
-            catalog.insert(event_with_mtth(0)),
-            Err(EventCatalogError::InvalidMeanTimeToHappen(_))
-        ));
-    }
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíç_{N‹Z–‹­¦ëeŠw¬Ô¼¼„…Ñ„µ‘É¥Ù•¸ÑÉ¥•ÉÌ°•Ù•¹ÑÌ°…¹Á±…å•È¡½¥•Ì¸4(¼¼„4(¼¼„Ù•¹Ð‘•™¥¹¥Ñ¥½¹Ì…É”¥µµÕÑ…‰±”…µ”½¹Ñ•¹Ð¸A•¹‘¥¹œ¡½¥•Ì°½½±‘½Ý¹Ì°4(¼¼„…¹½¹”µ½¹±ä½µÁ±•Ñ¥½¸ÍÑ…Ñ”±¥Ù”¥¸µ½±Ñ­”µ½É•€…¹Ñ¡•É•™½É”ÑÉ…Ù•°4(¼¼„Ý¥Ñ ¹½Éµ…°Í¥µÕ±…Ñ¥½¸Í…Ù•Ì¸4(4)ÕÍ”µ½±Ñ­•}½¹Ñ•¹Ðèéí½¹Ñ•¹ÑÉÉ½È°Á…ÉÍ•}Ñ½µ±ôì4)ÕÍ”µ½±Ñ­•}½É”èéì4(€€€½µµ…¹‘Ñ¥½¸°Ù•¹Ñ%°Ù•¹Ñ%¹ÍÑ…¹•%°Ù•¹ÑMÑ…Ñ•ÉÉ½È°A±…å•É%°EÕ•Õ•ÉÉ½È°EÕ•Õ•‘½µµ…¹°4(€€€M¥µÕ±…Ñ¥½¸°Q¥¬°QÉ¥•ÉÉÉ½È°QÉ¥•ÉáÁÈ°4)ôì4)ÕÍ”Í•É‘”èéí•Í•É¥…±¥é”°M•É¥…±¥é•ôì4)ÕÍ”ÍÑèé½±±•Ñ¥½¹Ìèéí	QÉ••5…À°	QÉ••M•Ñôì4)ÕÍ”ÍÑèé™µÐì4(4(m‘•É¥Ù”¡±½¹”°•‰Õœ°Ä°A…ÉÑ¥…±Ä°M•É¥…±¥é”°•Í•É¥…±¥é”¥t4(mÍ•É‘”¡‘•¹å}Õ¹­¹½Ý¹}™¥•±‘Ì¥t4)ÁÕˆÍÑÉÕÐÙ•¹Ñ=ÁÑ¥½¸ì4(€€€ÁÕˆ¥èMÑÉ¥¹œ°4(€€€ÁÕˆ±½…±¥é…Ñ¥½¹}­•äèMÑÉ¥¹œ°4(€€€€mÍ•É‘”¡‘•™…Õ±Ð¥t4(€€€ÁÕˆ•™™•ÑÌèY•Œñ½µµ…¹‘Ñ¥½¸ø°4)ô4(4(m‘•É¥Ù”¡±½¹”°•‰Õœ°Ä°A…ÉÑ¥…±Ä°M•É¥…±¥é”°•Í•É¥…±¥é”¥t4(mÍ•É‘”¡‘•¹å}Õ¹­¹½Ý¹}™¥•±‘Ì¥t4)ÁÕˆÍÑÉÕÐÙ•¹Ñ•™¥¹¥Ñ¥½¸ì4(€€€ÁÕˆ¥èÙ•¹Ñ%°4(€€€ÁÕˆÉ•¥Á¥•¹ÐèA±…å•É%°4(€€€ÁÕˆÑÉ¥•ÈèQÉ¥•ÉáÁÈ°4(€€€€mÍ•É‘”¡‘•™…Õ±Ð€ô€‰‘•™…Õ±Ñ}½¹”ˆ¥t4(€€€ÁÕˆ½¹”è‰½½°°4(€€€€mÍ•É‘”¡‘•™…Õ±Ð¥t4(€€€ÁÕˆ½½±‘½Ý¹}Ñ¥­Ìè=ÁÑ¥½¸ñÔØÐø°4(€€€€¼¼¼=ÁÑ¥½¹…°•½µ•ÑÉ¥Œ¡…é…É¥¹Ñ•ÉÙ…°¸Ù…±Õ”½˜8¥Ù•ÌÑ¡”•Ù•¹Ð„4(€€€€¼¼¼‘•Ñ•Éµ¥¹¥ÍÑ¥ŒÍ••‘•ÁÉ½‰…‰¥±¥Ñä½˜€Ä½8½¸•… •±¥¥‰±”Ñ¥¬¸4(€€€€mÍ•É‘”¡‘•™…Õ±Ð¥t4(€€€ÁÕˆµ•…¹}Ñ¥µ•}Ñ½}¡…ÁÁ•¹}Ñ¥­Ìè=ÁÑ¥½¸ñÔØÐø°4(€€€ÁÕˆ½ÁÑ¥½¹ÌèY•ŒñÙ•¹Ñ=ÁÑ¥½¸ø°4)ô4(4)™¸‘•™…Õ±Ñ}½¹” ¤€´ø‰½½°ì4(€€€ÑÉÕ”4)ô4(4)¥µÁ°Ù•¹Ñ•™¥¹¥Ñ¥½¸ì4(€€€™¸Ù…±¥‘…Ñ” ™Í•±˜¤€´øI•ÍÕ±Ðð ¤°Ù•¹Ñ…Ñ…±½ÉÉ½Èøì4(€€€€€€€Ù•¹Ñ%èé¹•Ü¡Í•±˜¹¥¹…Í}ÍÑÈ ¤¤¹µ…Á}•ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½Èèé%¹Ù…±¥‘Ù•¹Ñ%¤üì4(€€€€€€€Í•±˜¹ÑÉ¥•È4(€€€€€€€€€€€€¹Ù…±¥‘…Ñ” ¤4(€€€€€€€€€€€€¹µ…Á}•ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½ÈèéQÉ¥•È¤üì4(€€€€€€€¥˜Í•±˜¹½ÁÑ¥½¹Ì¹¥Í}•µÁÑä ¤ì4(€€€€€€€€€€€É•ÑÕÉ¸ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½Èèé9½=ÁÑ¥½¹Ì¡Í•±˜¹¥¹±½¹” ¤¤¤ì4(€€€€€€€ô4(€€€€€€€¥˜Í•±˜¹½ÁÑ¥½¹Ì¹±•¸ ¤€ø€Ñ|ÀäÔì4(€€€€€€€€€€€É•ÑÕÉ¸ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½ÈèéQ½½5…¹å=ÁÑ¥½¹Ì¡Í•±˜¹¥¹±½¹” ¤¤¤ì4(€€€€€€€ô4(€€€€€€€¥˜€…Í•±˜¹½¹”€˜˜Í•±˜¹½½±‘½Ý¹}Ñ¥­Ì¹¥Í}¹½¹•}½È¡ñ½½±‘½Ý¹ð½½±‘½Ý¸€ôô€À¤ì4(€€€€€€€€€€€É•ÑÕÉ¸ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½ÈèéI•Á•…Ñ9••‘Í½½±‘½Ý¸¡Í•±˜¹¥¹±½¹” ¤¤¤ì4(€€€€€€€ô4(€€€€€€€¥˜Í•±˜¹µ•…¹}Ñ¥µ•}Ñ½}¡…ÁÁ•¹}Ñ¥­Ì€ôôM½µ” À¤ì4(€€€€€€€€€€€É•ÑÕÉ¸ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½Èèé%¹Ù…±¥‘5•…¹Q¥µ•Q½!…ÁÁ•¸¡Í•±˜¹¥¹±½¹” ¤¤¤ì4(€€€€€€€ô4(€€€€€€€±•ÐµÕÐ¥‘Ì€ôÍÑèé½±±•Ñ¥½¹Ìèé	QÉ••M•Ðèé¹•Ü ¤ì4(€€€€€€€™½È½ÁÑ¥½¸¥¸€™Í•±˜¹½ÁÑ¥½¹Ìì4(€€€€€€€€€€€¥˜€…Ù…±¥‘}½ÁÑ¥½¹}¥ ™½ÁÑ¥½¸¹¥¤ñð€…¥‘Ì¹¥¹Í•ÉÐ¡½ÁÑ¥½¸¹¥¹…Í}ÍÑÈ ¤¤ì4(€€€€€€€€€€€€€€€É•ÑÕÉ¸ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½Èèé%¹Ù…±¥‘=ÁÑ¥½¹%ì4(€€€€€€€€€€€€€€€€€€€•Ù•¹Ñ}¥èÍ•±˜¹¥¹±½¹” ¤°4(€€€€€€€€€€€€€€€€€€€½ÁÑ¥½¹}¥è½ÁÑ¥½¸¹¥¹±½¹” ¤°4(€€€€€€€€€€€€€€€ô¤ì4(€€€€€€€€€€€ô4(€€€€€€€€€€€¥˜½ÁÑ¥½¸¹±½…±¥é…Ñ¥½¹}­•ä¹ÑÉ¥´ ¤¹¥Í}•µÁÑä ¤ì4(€€€€€€€€€€€€€€€É•ÑÕÉ¸ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½ÈèéµÁÑå1½…±¥é…Ñ¥½¹-•ä¡Í•±˜¹¥¹±½¹” ¤¤¤ì4(€€€€€€€€€€€ô4(€€€€€€€ô4(€€€€€€€=¬  ¤¤4(€€€ô4)ô4(4)™¸Ù…±¥‘}½ÁÑ¥½¹}¥¡Ù…±Õ”è€™ÍÑÈ¤€´ø‰½½°ì4(€€€€…Ù…±Õ”¹¥Í}•µÁÑä ¤4(€€€€€€€€˜˜Ù…±Õ”¹±•¸ ¤€ðô€äØ4(€€€€€€€€˜˜Ù…±Õ”¹…Í}‰åÑ•Ì ¥lÁt¹¥Í}…Í¥¥}±½Ý•É…Í” ¤4(€€€€€€€€˜˜Ù…±Õ”¹‰åÑ•Ì ¤¹…±°¡ñ‰åÑ•ðì4(€€€€€€€€€€€‰åÑ”¹¥Í}…Í¥¥}±½Ý•É…Í” ¤ñð‰åÑ”¹¥Í}…Í¥¥}‘¥¥Ð ¤ñðµ…Ñ¡•Ì„¡‰åÑ”°ˆ|œðˆœ´œðˆœ¸œ¤4(€€€€€€€ô¤4)ô4(4(m‘•É¥Ù”¡±½¹”°•‰Õœ°•™…Õ±Ð°Ä°A…ÉÑ¥…±Ä¥t4)ÁÕˆÍÑÉÕÐÙ•¹Ñ…Ñ…±½œì4(€€€‘•™¥¹¥Ñ¥½¹Ìè	QÉ••5…ÀñÙ•¹Ñ%°Ù•¹Ñ•™¥¹¥Ñ¥½¸ø°4)ô4(4)¥µÁ°Ù•¹Ñ…Ñ…±½œì4(€€€ÁÕˆ™¸¥¹Í•ÉÐ ™µÕÐÍ•±˜°‘•™¥¹¥Ñ¥½¸èÙ•¹Ñ•™¥¹¥Ñ¥½¸¤€´øI•ÍÕ±Ðð ¤°Ù•¹Ñ…Ñ…±½ÉÉ½Èøì4(€€€€€€€‘•™¥¹¥Ñ¥½¸¹Ù…±¥‘…Ñ” ¤üì4(€€€€€€€¥˜Í•±˜¹‘•™¥¹¥Ñ¥½¹Ì¹½¹Ñ…¥¹Í}­•ä ™‘•™¥¹¥Ñ¥½¸¹¥¤ì4(€€€€€€€€€€€É•ÑÕÉ¸ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½ÈèéÕÁ±¥…Ñ•Ù•¹Ð¡‘•™¥¹¥Ñ¥½¸¹¥¤¤ì4(€€€€€€€ô4(€€€€€€€Í•±˜¹‘•™¥¹¥Ñ¥½¹Ì¹¥¹Í•ÉÐ¡‘•™¥¹¥Ñ¥½¸¹¥¹±½¹” ¤°‘•™¥¹¥Ñ¥½¸¤ì4(€€€€€€€=¬  ¤¤4(€€€ô4(4(€€€ÁÕˆ™¸•Ð ™Í•±˜°¥è€™Ù•¹Ñ%¤€´ø=ÁÑ¥½¸ð™Ù•¹Ñ•™¥¹¥Ñ¥½¸øì4(€€€€€€€Í•±˜¹‘•™¥¹¥Ñ¥½¹Ì¹•Ð¡¥¤4(€€€ô4(4(€€€ÁÕˆ™¸‘•™¥¹¥Ñ¥½¹Ì ™Í•±˜¤€´ø€™	QÉ••5…ÀñÙ•¹Ñ%°Ù•¹Ñ•™¥¹¥Ñ¥½¸øì4(€€€€€€€€™Í•±˜¹‘•™¥¹¥Ñ¥½¹Ì4(€€€ô4(4(€€€ÁÕˆ™¸™É½µ}Ñ½µ°¡Á…Ñ è€™ÍÑÈ°Í½ÕÉ”è€™ÍÑÈ¤€´øI•ÍÕ±ÐñM•±˜°Ù•¹Ñ1½…‘ÉÉ½Èøì4(€€€€€€€±•Ð™¥±”èÙ•¹Ñ¥±”€ôÁ…ÉÍ•}Ñ½µ°¡Á…Ñ °Í½ÕÉ”¤¹µ…Á}•ÉÈ¡Ù•¹Ñ1½…‘ÉÉ½Èèé½¹Ñ•¹Ð¤üì4(€€€€€€€±•ÐµÕÐ…Ñ…±½œ€ôM•±˜èé‘•™…Õ±Ð ¤ì4(€€€€€€€™½È‘•™¥¹¥Ñ¥½¸¥¸™¥±”¹•Ù•¹ÑÌì4(€€€€€€€€€€€…Ñ…±½œ4(€€€€€€€€€€€€€€€€¹¥¹Í•ÉÐ¡‘•™¥¹¥Ñ¥½¸¤4(€€€€€€€€€€€€€€€€¹µ…Á}•ÉÈ¡Ù•¹Ñ1½…‘ÉÉ½Èèé…Ñ…±½œ¤üì4(€€€€€€€ô4(€€€€€€€=¬¡…Ñ…±½œ¤4(€€€ô4)ô4(4(m‘•É¥Ù”¡•Í•É¥…±¥é”¥t4(mÍ•É‘”¡‘•¹å}Õ¹­¹½Ý¹}™¥•±‘Ì¥t4)ÍÑÉÕÐÙ•¹Ñ¥±”ì4(€€€€mÍ•É‘”¡‘•™…Õ±Ð¥t4(€€€•Ù•¹ÑÌèY•ŒñÙ•¹Ñ•™¥¹¥Ñ¥½¸ø°4)ô4(4(¼¼¼IÕ¹Ì•Ù•¹ÐÑÉ¥•ÉÌ…Ð„Í¥µÕ±…Ñ¥½¸‰½Õ¹‘…Éä…¹ÑÕÉ¹ÌÁ±…å•È¡½¥•Ì¥¹Ñ¼4(¼¼¼…Ñ½µ¥…±±äÅÕ•Õ•Í¥µÕ±…Ñ¥½¸½µµ…¹‘Ì¸4(m‘•É¥Ù”¡±½¹”°½Áä°•‰Õœ°•™…Õ±Ð¥t4)ÁÕˆÍÑÉÕÐÙ•¹Ñ¹¥¹”ì4(4)¥µÁ°Ù•¹Ñ¹¥¹”ì4(€€€ÁÕˆ™¸•Ù…±Õ…Ñ” 4(€€€€€€€€™Í•±˜°4(€€€€€€€Í¥µÕ±…Ñ¥½¸è€™µÕÐM¥µÕ±…Ñ¥½¸°4(€€€€€€€…Ñ…±½œè€™Ù•¹Ñ…Ñ…±½œ°4(€€€€¤€´øI•ÍÕ±ÐñY•ŒñEÕ•Õ•‘½µµ…¹ø°Ù•¹Ñ¹¥¹•ÉÉ½Èøì4(€€€€€€€±•Ð¹½Ü€ôÍ¥µÕ±…Ñ¥½¸¹ÍÑ…Ñ” ¤¹Ñ¥¬ ¤ì4(€€€€€€€±•ÐÑ…É•Ñ}Ñ¥¬€ôQ¥¬¡¹½Ü¸À¹¡•­•‘}…‘ Ä¤¹½­}½È¡Ù•¹Ñ¹¥¹•ÉÉ½ÈèéQ¥­=Ù•É™±½Ü¤ü¤ì4(€€€€€€€€¼¼A±…å•Èé•É¼¥ÌÉ•Í•ÉÙ•™½È‘•Ñ•Éµ¥¹¥ÍÑ¥Œ•¹¥¹”µ•¹•É…Ñ•½µµ…¹‘Ì¸4(€€€€€€€±•ÐÍåÍÑ•µ}Á±…å•È€ôA±…å•É% À¤ì4(€€€€€€€±•ÐµÕÐÕÍ•‘}Í•ÅÕ•¹•Ìè	QÉ••M•ÐñÔØÐø€ôÍ¥µÕ±…Ñ¥½¸4(€€€€€€€€€€€€¹ÅÕ•Õ•‘}½µµ…¹‘Ì ¤4(€€€€€€€€€€€€¹¥Ñ•È ¤4(€€€€€€€€€€€€¹™¥±Ñ•È¡ñ½µµ…¹‘ð½µµ…¹¹Ñ¥¬€ôôÑ…É•Ñ}Ñ¥¬€˜˜½µµ…¹¹Á±…å•É}¥€ôôÍåÍÑ•µ}Á±…å•È¤4(€€€€€€€€€€€€¹µ…À¡ñ½µµ…¹‘ð½µµ…¹¹Í•ÅÕ•¹”¤4(€€€€€€€€€€€€¹½±±•Ð ¤ì4(€€€€€€€±•Ð…±É•…‘å}ÅÕ•Õ•è	QÉ••M•ÐñÙ•¹Ñ%ø€ôÍ¥µÕ±…Ñ¥½¸4(€€€€€€€€€€€€¹ÅÕ•Õ•‘}½µµ…¹‘Ì ¤4(€€€€€€€€€€€€¹¥Ñ•È ¤4(€€€€€€€€€€€€¹™¥±Ñ•É}µ…À¡ñ½µµ…¹‘ðì4(€€€€€€€€€€€€€€€¥˜½µµ…¹¹Ñ¥¬€„ôÑ…É•Ñ}Ñ¥¬ì4(€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸9½¹”ì4(€€€€€€€€€€€€€€€ô4(€€€€€€€€€€€€€€€µ…Ñ €™½µµ…¹¹…Ñ¥½¸ì4(€€€€€€€€€€€€€€€€€€€½µµ…¹‘Ñ¥½¸èé=Á•¹Ù•¹Ðì•Ù•¹Ñ}¥°€¸¸ô€ôøM½µ”¡•Ù•¹Ñ}¥¹±½¹” ¤¤°4(€€€€€€€€€€€€€€€€€€€|€ôø9½¹”°4(€€€€€€€€€€€€€€€ô4(€€€€€€€€€€€ô¤4(€€€€€€€€€€€€¹½±±•Ð ¤ì4(€€€€€€€±•ÐµÕÐ¹•áÑ}Í•ÅÕ•¹”€ô€Á}ÔØÐì4(€€€€€€€±•ÐµÕÐ½µµ…¹‘Ì€ôY•Œèé¹•Ü ¤ì4(€€€€€€€™½È‘•™¥¹¥Ñ¥½¸¥¸…Ñ…±½œ¹‘•™¥¹¥Ñ¥½¹Ì¹Ù…±Õ•Ì ¤ì4(€€€€€€€€€€€¥˜…±É•…‘å}ÅÕ•Õ•¹½¹Ñ…¥¹Ì ™‘•™¥¹¥Ñ¥½¸¹¥¤ì4(€€€€€€€€€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€€€€€€€ô4(€€€€€€€€€€€±•Ð…¹}™¥É”€ôÍ¥µÕ±…Ñ¥½¸¹ÍÑ…Ñ” ¤¹•Ù•¹Ñ}ÉÕ¹Ñ¥µ” ¤¹…¹}™¥É” 4(€€€€€€€€€€€€€€€€™‘•™¥¹¥Ñ¥½¸¹¥°4(€€€€€€€€€€€€€€€¹½Ü°4(€€€€€€€€€€€€€€€‘•™¥¹¥Ñ¥½¸¹½¹”°4(€€€€€€€€€€€€€€€‘•™¥¹¥Ñ¥½¸¹½½±‘½Ý¹}Ñ¥­Ì°4(€€€€€€€€€€€€¤ì4(€€€€€€€€€€€¥˜€……¹}™¥É”ì4(€€€€€€€€€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€€€€€€€ô4(€€€€€€€€€€€±•ÐÑÉ¥•É•€ô‘•™¥¹¥Ñ¥½¸4(€€€€€€€€€€€€€€€€¹ÑÉ¥•È4(€€€€€€€€€€€€€€€€¹•Ù…±Õ…Ñ”¡Í¥µÕ±…Ñ¥½¸¹ÍÑ…Ñ•}µÕÐ ¤¤4(€€€€€€€€€€€€€€€€¹µ…Á}•ÉÈ¡Ù•¹Ñ¹¥¹•ÉÉ½ÈèéQÉ¥•È¤üì4(€€€€€€€€€€€¥˜ÑÉ¥•É•4(€€€€€€€€€€€€€€€€˜˜‘•™¥¹¥Ñ¥½¸4(€€€€€€€€€€€€€€€€€€€€¹µ•…¹}Ñ¥µ•}Ñ½}¡…ÁÁ•¹}Ñ¥­Ì4(€€€€€€€€€€€€€€€€€€€€¹¥Í}¹½¹•}½È¡ñµ•…¹ðµÑÑ¡}É½±±}Á…ÍÍ•Ì¡Í¥µÕ±…Ñ¥½¸°µ•…¸¤¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€Ý¡¥±”ÕÍ•‘}Í•ÅÕ•¹•Ì¹½¹Ñ…¥¹Ì ™¹•áÑ}Í•ÅÕ•¹”¤ì4(€€€€€€€€€€€€€€€€€€€¹•áÑ}Í•ÅÕ•¹”€ô¹•áÑ}Í•ÅÕ•¹”4(€€€€€€€€€€€€€€€€€€€€€€€€¹¡•­•‘}…‘ Ä¤4(€€€€€€€€€€€€€€€€€€€€€€€€¹½­}½È¡Ù•¹Ñ¹¥¹•ÉÉ½ÈèéM•ÅÕ•¹•=Ù•É™±½Ü¤üì4(€€€€€€€€€€€€€€€ô4(€€€€€€€€€€€€€€€±•ÐÍ•ÅÕ•¹”€ô¹•áÑ}Í•ÅÕ•¹”ì4(€€€€€€€€€€€€€€€ÕÍ•‘}Í•ÅÕ•¹•Ì¹¥¹Í•ÉÐ¡Í•ÅÕ•¹”¤ì4(€€€€€€€€€€€€€€€½µµ…¹‘Ì¹ÁÕÍ ¡EÕ•Õ•‘½µµ…¹èé¹•Ü 4(€€€€€€€€€€€€€€€€€€€Ñ…É•Ñ}Ñ¥¬°4(€€€€€€€€€€€€€€€€€€€ÍåÍÑ•µ}Á±…å•È°4(€€€€€€€€€€€€€€€€€€€Í•ÅÕ•¹”°4(€€€€€€€€€€€€€€€€€€€½µµ…¹‘Ñ¥½¸èé=Á•¹Ù•¹Ðì4(€€€€€€€€€€€€€€€€€€€€€€€•Ù•¹Ñ}¥è‘•™¥¹¥Ñ¥½¸¹¥¹±½¹” ¤°4(€€€€€€€€€€€€€€€€€€€€€€€É•¥Á¥•¹Ðè‘•™¥¹¥Ñ¥½¸¹É•¥Á¥•¹Ð°4(€€€€€€€€€€€€€€€€€€€€€€€½¹”è‘•™¥¹¥Ñ¥½¸¹½¹”°4(€€€€€€€€€€€€€ƒ_{¶‰žËkºwµçU±…Ñ¥½¸4(€€€€€€€€€€€€¹ÍÑ…Ñ” ¤4(€€€€€€€€€€€€¹•Ù•¹Ñ}ÉÕ¹Ñ¥µ” ¤4(€€€€€€€€€€€€¹Á•¹‘¥¹œ ¤4(€€€€€€€€€€€€¹•Ð ™¥¹ÍÑ…¹•}¥¤4(€€€€€€€€€€€€¹±½¹• ¤4(€€€€€€€€€€€€¹½­}½È¡Ù•¹Ñ¹¥¹•ÉÉ½ÈèéU¹­¹½Ý¹%¹ÍÑ…¹”¡¥¹ÍÑ…¹•}¥¤¤üì4(€€€€€€€±•Ð…±É•…‘å}ÍÕ‰µ¥ÑÑ•€ôÍ¥µÕ±…Ñ¥½¸¹ÅÕ•Õ•‘}½µµ…¹‘Ì ¤¹¥Ñ•È ¤¹…¹ä¡ñ½µµ…¹‘ðì4(€€€€€€€€€€€µ…Ñ¡•Ì„ ™½µµ…¹¹…Ñ¥½¸°½µµ…¹‘Ñ¥½¸èéI•Í½±Ù•Ù•¹Ðì¥¹ÍÑ…¹•}¥èÅÕ•Õ•‘}¥ô¥˜€©ÅÕ•Õ•‘}¥€ôô¥¹ÍÑ…¹•}¥¤4(€€€€€€€ô¤ì4(€€€€€€€¥˜…±É•…‘å}ÍÕ‰µ¥ÑÑ•ì4(€€€€€€€€€€€É•ÑÕÉ¸ÉÈ¡Ù•¹Ñ¹¥¹•ÉÉ½Èèé¡½¥•±É•…‘åMÕ‰µ¥ÑÑ•¡¥¹ÍÑ…¹•}¥¤¤ì4(€€€€€€€ô4(€€€€€€€¥˜Á•¹‘¥¹œ¹É•¥Á¥•¹Ð€„ôÁ±…å•É}¥ì4(€€€€€€€€€€€É•ÑÕÉ¸ÉÈ¡Ù•¹Ñ¹¥¹•ÉÉ½Èèé]É½¹I•¥Á¥•¹Ðì4(€€€€€€€€€€€€€€€¥¹ÍÑ…¹•}¥°4(€€€€€€€€€€€€€€€•áÁ•Ñ•èÁ•¹‘¥¹œ¹É•¥Á¥•¹Ð°4(€€€€€€€€€€€€€€€…ÑÕ…°èÁ±…å•É}¥°4(€€€€€€€€€€€ô¤ì4(€€€€€€€ô4(€€€€€€€±•Ð‘•™¥¹¥Ñ¥½¸€ô…Ñ…±½œ4(€€€€€€€€€€€€¹•Ð ™Á•¹‘¥¹œ¹•Ù•¹Ñ}¥¤4(€€€€€€€€€€€€¹½­}½É}•±Í”¡ñðÙ•¹Ñ¹¥¹•ÉÉ½Èèé5¥ÍÍ¥¹•™¥¹¥Ñ¥½¸¡Á•¹‘¥¹œ¹•Ù•¹Ñ}¥¹±½¹” ¤¤¤üì4(€€€€€€€±•Ð½ÁÑ¥½¸€ô‘•™¥¹¥Ñ¥½¸4(€€€€€€€€€€€€¹½ÁÑ¥½¹Ì4(€€€€€€€€€€€€¹¥Ñ•È ¤4(€€€€€€€€€€€€¹™¥¹¡ñ½ÁÑ¥½¹ð½ÁÑ¥½¸¹¥€ôô½ÁÑ¥½¹}¥¤4(€€€€€€€€€€€€¹½­}½É}•±Í”¡ñðÙ•¹Ñ¹¥¹•ÉÉ½ÈèéU¹­¹½Ý¹=ÁÑ¥½¸ì4(€€€€€€€€€€€€€€€•Ù•¹Ñ}¥èÁ•¹‘¥¹œ¹•Ù•¹Ñ}¥¹±½¹” ¤°4(€€€€€€€€€€€€€€€½ÁÑ¥½¹}¥è½ÁÑ¥½¹}¥¹Ñ½}½Ý¹• ¤°4(€€€€€€€€€€€ô¤üì4(4(€€€€€€€±•ÐÑ…É•Ñ}Ñ¥¬€ôQ¥¬ 4(€€€€€€€€€€€Í¥µÕ±…Ñ¥½¸4(€€€€€€€€€€€€€€€€¹ÍÑ…Ñ” ¤4(€€€€€€€€€€€€€€€€¹Ñ¥¬ ¤4(€€€€€€€€€€€€€€€€¸À4(€€€€€€€€€€€€€€€€¹¡•­•‘}…‘ Ä¤4(€€€€€€€€€€€€€€€€¹½­}½È¡Ù•¹Ñ¹¥¹•ÉÉ½ÈèéQ¥­=Ù•É™±½Ü¤ü°4(€€€€€€€€¤ì4(€€€€€€€±•ÐµÕÐ½µµ…¹‘Ì€ôY•ŒèéÝ¥Ñ¡}…Á…¥Ñä¡½ÁÑ¥½¸¹•™™•ÑÌ¹±•¸ ¤€¬€Ä¤ì4(€€€€€€€½µµ…¹‘Ì¹ÁÕÍ ¡EÕ•Õ•‘½µµ…¹èé¹•Ü 4(€€€€€€€€€€€Ñ…É•Ñ}Ñ¥¬°4(€€€€€€€€€€€Á±…å•É}¥°4(€€€€€€€€€€€™¥ÉÍÑ}Í•ÅÕ•¹”°4(€€€€€€€€€€€½µµ…¹‘Ñ¥½¸èéI•Í½±Ù•Ù•¹Ðì¥¹ÍÑ…¹•}¥ô°4(€€€€€€€€¤¤ì4(€€€€€€€™½È€¡½™™Í•Ð°…Ñ¥½¸¤¥¸½ÁÑ¥½¸¹•™™•ÑÌ¹¥Ñ•È ¤¹•¹Õµ•É…Ñ” ¤ì4(€€€€€€€€€€€±•ÐÍ•ÅÕ•¹”€ô™¥ÉÍÑ}Í•ÅÕ•¹”4(€€€€€€€€€€€€€€€€¹¡•­•‘}…‘¡ÔØÐèéÑÉå}™É½´¡½™™Í•Ð¤¹µ…Á}•ÉÈ¡ñ}ðÙ•¹Ñ¹¥¹•ÉÉ½ÈèéM•ÅÕ•¹•=Ù•É™±½Ü¤ü¤4(€€€€€€€€€€€€€€€€¹…¹‘}Ñ¡•¸¡ñÍ•ÅÕ•¹•ðÍ•ÅÕ•¹”¹¡•­•‘}…‘ Ä¤¤4(€€€€€€€€€€€€€€€€¹½­}½È¡Ù•¹Ñ¹¥¹•ÉÉ½ÈèéM•ÅÕ•¹•=Ù•É™±½Ü¤üì4(€€€€€€€€€€€½µµ…¹‘Ì¹ÁÕÍ ¡EÕ•Õ•‘½µµ…¹èé¹•Ü 4(€€€€€€€€€€€€€€€Ñ…É•Ñ}Ñ¥¬°4(€€€€€€€€€€€€€€€Á±…å•É}¥°4(€€€€€€€€€€€€€€€Í•ÅÕ•¹”°4(€€€€€€€€€€€€€€€…Ñ¥½¸¹±½¹” ¤°4(€€€€€€€€€€€€¤¤ì4(€€€€€€€ô4(4(€€€€€€€Í¥µÕ±…Ñ¥½¸4(€€€€€€€€€€€€¹Í¡•‘Õ±•}½µµ…¹‘Ì¡½µµ…¹‘Ì¹±½¹” ¤¤4(€€€€€€€€€€€€¹µ…Á}•ÉÈ¡Ù•¹Ñ¹¥¹•ÉÉ½ÈèéEÕ•Õ”¤üì4(€€€€€€€=¬¡½µµ…¹‘Ì¤4(€€€ô4)ô4(4)™¸µÑÑ¡}É½±±}Á…ÍÍ•Ì¡Í¥µÕ±…Ñ¥½¸è€™µÕÐM¥µÕ±…Ñ¥½¸°µ•…¹}Ñ¥­ÌèÔØÐ¤€´ø‰½½°ì4(€€€±•ÐÉ•©•Ñ¥½¹}Ñ¡É•Í¡½±€ôµ•…¹}Ñ¥­Ì¹ÝÉ…ÁÁ¥¹}¹•œ ¤€”µ•…¹}Ñ¥­Ìì4(€€€±½½Àì4(€€€€€€€±•Ð‘É…Ü€ôÍ¥µÕ±…Ñ¥½¸¹ÍÑ…Ñ•}µÕÐ ¤¹É…¹‘½µ}ÔØÐ ¤ì4(€€€€€€€¥˜‘É…Ü€øôÉ•©•Ñ¥½¹}Ñ¡É•Í¡½±ì4(€€€€€€€€€€€É•ÑÕÉ¸‘É…Ü¹¥Í}µÕ±Ñ¥Á±•}½˜¡µ•…¹}Ñ¥­Ì¤ì4(€€€€€€€ô4(€€€ô4)ô4(4(m‘•É¥Ù”¡•‰Õœ¥t4)ÁÕˆ•¹Õ´Ù•¹Ñ…Ñ…±½ÉÉ½Èì4(€€€%¹Ù…±¥‘Ù•¹Ñ%¡Ù•¹ÑMÑ…Ñ•ÉÉ½È¤°4(€€€QÉ¥•È¡QÉ¥•ÉÉÉ½È¤°4(€€€ÕÁ±¥…Ñ•Ù•¹Ð¡Ù•¹Ñ%¤°4(€€€9½=ÁÑ¥½¹Ì¡Ù•¹Ñ%¤°4(€€€I•Á•…Ñ9••‘Í½½±‘½Ý¸¡Ù•¹Ñ%¤°4(€€€%¹Ù…±¥‘5•…¹Q¥µ•Q½!…ÁÁ•¸¡Ù•¹Ñ%¤°4(€€€Q½½5…¹å=ÁÑ¥½¹Ì¡Ù•¹Ñ%¤°4(€€€%¹Ù…±¥‘=ÁÑ¥½¹%ì4(€€€€€€€•Ù•¹Ñ}¥èÙ•¹Ñ%°4(€€€€€€€½ÁÑ¥½¹}¥èMÑÉ¥¹œ°4(€€€ô°4(€€€µÁÑå1½…±¥é…Ñ¥½¹-•ä¡Ù•¹Ñ%¤°4)ô4(4(m‘•É¥Ù”¡•‰Õœ¥t4)ÁÕˆ•¹Õ´Ù•¹Ñ1½…‘ÉÉ½Èì4(€€€½¹Ñ•¹Ð¡½¹Ñ•¹ÑÉÉ½È¤°4(€€€…Ñ…±½œ¡Ù•¹Ñ…Ñ…±½ÉÉ½È¤°4)ô4(4(m‘•É¥Ù”¡•‰Õœ¥t4)ÁÕˆ•¹Õ´Ù•¹Ñ¹¥¹•ÉÉ½Èì4(€€€QÉ¥•È¡QÉ¥•ÉÉÉ½È¤°4(€€€EÕ•Õ”¡EÕ•Õ•ÉÉ½È¤°4(€€€U¹­¹½Ý¹%¹ÍÑ…¹”¡Ù•¹Ñ%¹ÍÑ…¹•%¤°4(€€€5¥ÍÍ¥¹•™¥¹¥Ñ¥½¸¡Ù•¹Ñ%¤°4(€€€]É½¹I•¥Á¥•¹Ðì4(€€€€€€€¥¹ÍÑ…¹•}¥èÙ•¹Ñ%¹ÍÑ…¹•%°4(€€€€€€€•áÁ•Ñ•èA±…å•É%°4(€€€€€€€…ÑÕ…°èA±…å•É%°4(€€€ô°4(€€€U¹­¹½Ý¹=ÁÑ¥½¸ì4(€€€€€€€•Ù•¹Ñ}¥èÙ•¹Ñ%°4(€€€€€€€½ÁÑ¥½¹}¥èMÑÉ¥¹œ°4(€€€ô°4(€€€¡½¥•±É•…‘åMÕ‰µ¥ÑÑ•¡Ù•¹Ñ%¹ÍÑ…¹•%¤°4(€€€Q¥­=Ù•É™±½Ü°4(€€€M•ÅÕ•¹•=Ù•É™±½Ü°4)ô4(4)¥µÁ°™µÐèé¥ÍÁ±…ä™½ÈÙ•¹Ñ…Ñ…±½ÉÉ½Èì4(€€€™¸™µÐ ™Í•±˜°™½Éµ…ÑÑ•Èè€™µÕÐ™µÐèé½Éµ…ÑÑ•Èð|ø¤€´ø™µÐèéI•ÍÕ±Ðì4(€€€€€€€ÝÉ¥Ñ”„¡™½Éµ…ÑÑ•È°€‰¥¹Ù…±¥•Ù•¹Ð…Ñ…±½œèíÍ•±˜èýôˆ¤4(€€€ô4)ô4(4)¥µÁ°ÍÑèé•ÉÉ½ÈèéÉÉ½È™½ÈÙ•¹Ñ…Ñ…±½ÉÉ½Èíô4(4)¥µÁ°™µÐèé¥ÍÁ±…ä™½ÈÙ•¹Ñ1½…‘ÉÉ½Èì4(€€€™¸™µÐ ™Í•±˜°™½Éµ…ÑÑ•Èè€™µÕÐ™µÐèé½Éµ…ÑÑ•Èð|ø¤€´ø™µÐèéI•ÍÕ±Ðì4(€€€€€€€µ…Ñ Í•±˜ì4(€€€€€€€€€€€M•±˜èé½¹Ñ•¹Ð¡•ÉÉ½È¤€ôøÝÉ¥Ñ”„¡™½Éµ…ÑÑ•È°€‰•Ù•¹Ð½¹Ñ•¹Ð•ÉÉ½Èèí•ÉÉ½Éôˆ¤°4(€€€€€€€€€€€M•±˜èé…Ñ…±½œ¡•ÉÉ½È¤€ôøÝÉ¥Ñ”„¡™½Éµ…ÑÑ•È°€‰•Ù•¹Ð‘•™¥¹¥Ñ¥½¸•ÉÉ½Èèí•ÉÉ½Éôˆ¤°4(€€€€€€€ô4(€€€ô4)ô4(4)¥µÁ°ÍÑèé•ÉÉ½ÈèéÉÉ½È™½ÈÙ•¹Ñ1½…‘ÉÉ½Èíô4(4)¥µÁ°™µÐèé¥ÍÁ±…ä™½ÈÙ•¹Ñ¹¥¹•ÉÉ½Èì4(€€€™¸™µÐ ™Í•±˜°™½Éµ…ÑÑ•Èè€™µÕÐ™µÐèé½Éµ…ÑÑ•Èð|ø¤€´ø™µÐèéI•ÍÕ±Ðì4(€€€€€€€µ…Ñ Í•±˜ì4(€€€€€€€€€€€M•±˜èéQÉ¥•È¡•ÉÉ½È¤€ôøÝÉ¥Ñ”„¡™½Éµ…ÑÑ•È°€‰•Ù•¹ÐÑÉ¥•È™…¥±•èí•ÉÉ½Èèýôˆ¤°4(€€€€€€€€€€€M•±˜èéEÕ•Õ”¡•ÉÉ½È¤€ôøÝÉ¥Ñ”„¡™½Éµ…ÑÑ•È°€‰•Ù•¹Ð•™™•ÑÌ½Õ±¹½Ð‰”ÅÕ•Õ•èí•ÉÉ½Èèýôˆ¤°4(€€€€€€€€€€€M•±˜èéU¹­¹½Ý¹%¹ÍÑ…¹”¡¥¤€ôøì4(€€€€€€€€€€€€€€€ÝÉ¥Ñ”„¡™½Éµ…ÑÑ•È°€‰Õ¹­¹½Ý¸Á•¹‘¥¹œ•Ù•¹Ð¥¹ÍÑ…¹”íôˆ°¥¸À¤4(€€€€€€€€€€€ô4(€€€€€€€€€€€M•±˜èé5¥ÍÍ¥¹•™¥¹¥Ñ¥½¸¡¥¤€ôøì4(€€€€€€€€€€€€€€€ÝÉ¥Ñ”„¡™½Éµ…ÑÑ•È°€‰•Ù•¹Ð‘•™¥¹¥Ñ¥½¸ìèýô¥Ìµ¥ÍÍ¥¹œˆ°¥¹…Í}ÍÑÈ ¤¤4(€€€€€€€€€€€ô4(€€€€€€€€€€€M•±˜èé]É½¹I•¥Á¥•¹Ðì4(€€€€€€€€€€€€€€€¥¹ÍÑ…¹•}¥°4(€€€€€€€€€€€€€€€•áÁ•Ñ•°4(€€€€€€€€€€€€€€€…ÑÕ…°°4(€€€€€€€€€€€ô€ôøÝÉ¥Ñ”„ 4(€€€€€€€€€€€€€€€™½Éµ…ÑÑ•È°4(€€€€€€€€€€€€€€€€‰Á±…å•Èíô…¹¹½Ð¡½½Í”•Ù•¹Ð¥¹ÍÑ…¹”íô…ÍÍ¥¹•Ñ¼Á±…å•Èíôˆ°4(€€€€€€€€€€€€€€€…ÑÕ…°¸À°¥¹ÍÑ…¹•}¥¸À°•áÁ•Ñ•¸À4(€€€€€€€€€€€€¤°4(€€€€€€€€€€€M•±˜èéU¹­¹½Ý¹=ÁÑ¥½¸ì4(€€€€€€€€€€€€€€€•Ù•¹Ñ}¥°4(€€€€€€€€€€€€€€€½ÁÑ¥½¹}¥°4(€€€€€€€€€€€ô€ôøÝÉ¥Ñ”„ 4(€€€€€€€€€€€€€€€™½Éµ…ÑÑ•È°4(€€€€€€€€€€€€€€€€‰•Ù•¹Ðìèýô¡…Ì¹¼½ÁÑ¥½¸í½ÁÑ¥½¹}¥èýôˆ°4(€€€€€€€€€€€€€€€•Ù•¹Ñ}¥¹…Í}ÍÑÈ ¤4(€€€€€€€€€€€€¤°4(€€€€€€€€€€€M•±˜èé¡½¥•±É•…‘åMÕ‰µ¥ÑÑ•¡¥¤€ôøÝÉ¥Ñ”„ 4(€€€€€€€€€€€€€€€™½Éµ…ÑÑ•È°4(€€€€€€€€€€€€€€€€‰„¡½¥”¥Ì…±É•…‘äÅÕ•Õ•™½È•Ù•¹Ð¥¹ÍÑ…¹”íôˆ°4(€€€€€€€€€€€€€€€¥¸À4(€€€€€€€€€€€€¤°4(€€€€€€€€€€€M•±˜èéQ¥­=Ù•É™±½Ü€ôøì4(€€€€€€€€€€€€€€€™½Éµ…ÑÑ•È¹ÝÉ¥Ñ•}ÍÑÈ ‰Í¥µÕ±…Ñ¥½¸Ñ¥¬½Ù•É™±½ÜÝ¡¥±”ÅÕ•Õ¥¹œ•Ù•¹Ð•™™•ÑÌˆ¤4(€€€€€€€€€€€ô4(€€€€€€€€€€€M•±˜èéM•ÅÕ•¹•=Ù•É™±½Ü€ôøì4(€€€€€€€€€€€€€€€™½Éµ…ÑÑ•È¹ÝÉ¥Ñ•}ÍÑÈ ‰½µµ…¹Í•ÅÕ•¹”½Ù•É™±½ÜÝ¡¥±”ÅÕ•Õ¥¹œ•Ù•¹Ð•™™•ÑÌˆ¤4(€€€€€€€€€€€ô4(€€€€€€€ô4(€€€ô4)ô4(4)¥µÁ°ÍÑèé•ÉÉ½ÈèéÉÉ½È™½ÈÙ•¹Ñ¹¥¹•ÉÉ½Èíô4(4(m™œ¡Ñ•ÍÐ¥t4)µ½Ñ•ÍÑÌì4(€€€ÕÍ”ÍÕÁ•Èèè¨ì4(4(€€€™¸•Ù•¹Ñ}Ý¥Ñ¡}µÑÑ ¡µ•…¹}Ñ¥µ•}Ñ½}¡…ÁÁ•¹}Ñ¥­ÌèÔØÐ¤€´øÙ•¹Ñ•™¥¹¥Ñ¥½¸ì4(€€€€€€€Ù•¹Ñ•™¥¹¥Ñ¥½¸ì4(€€€€€€€€€€€¥èÙ•¹Ñ%èé¹•Ü ‰Ñ•ÍÑ}•Ù•¹Ðˆ¤¹•áÁ•Ð ‰Ù…±¥•Ù•¹Ð¥ˆ¤°4(€€€€€€€€€€€É•¥Á¥•¹ÐèA±…å•É% Ä¤°4(€€€€€€€€€€€ÑÉ¥•ÈèQÉ¥•ÉáÁÈèé±Ý…åÌ°4(€€€€€€€€€€€½¹”èÑÉÕ”°4(€€€€€€€€€€€½½±‘½Ý¹}Ñ¥­Ìè9½¹”°4(€€€€€€€€€€€µ•…¹}Ñ¥µ•}Ñ½}¡…ÁÁ•¹}Ñ¥­ÌèM½µ”¡µ•…¹}Ñ¥µ•}Ñ½}¡…ÁÁ•¹}Ñ¥­Ì¤°4(€€€€€€€€€€€½ÁÑ¥½¹ÌèÙ•Œ…mÙ•¹Ñ=ÁÑ¥½¸ì4(€€€€€€€€€€€€€€€¥è€‰…•ÁÐˆ¹Ñ½}½Ý¹• ¤°4(€€€€€€€€€€€€€€€±½…±¥é…Ñ¥½¹}­•äè€‰•Ù•¹Ð¹Ñ•ÍÐ¹…•ÁÐˆ¹Ñ½}½Ý¹• ¤°4(€€€€€€€€€€€€€€€•™™•ÑÌèY•Œèé¹•Ü ¤°4(€€€€€€€€€€€õt°4(€€€€€€€ô4(€€€ô4(4(€€€€mÑ•ÍÑt4(€€€™¸½¹•}Ñ¥­}µ•…¹}Ñ¥µ•}ÑÉ¥•ÉÍ}¥µµ•‘¥…Ñ•±ä ¤ì4(€€€€€€€±•ÐµÕÐ…Ñ…±½œ€ôÙ•¹Ñ…Ñ…±½œèé‘•™…Õ±Ð ¤ì4(€€€€€€€…Ñ…±½œ4(€€€€€€€€€€€€¹¥¹Í•ÉÐ¡•Ù•¹Ñ}Ý¥Ñ¡}µÑÑ  Ä¤¤4(€€€€€€€€€€€€¹•áÁ•Ð ‰Ù…±¥•Ù•¹Ð‘•™¥¹¥Ñ¥½¸ˆ¤ì4(€€€€€€€±•Ð½µµ…¹‘Ì€ôÙ•¹Ñ¹¥¹”4(€€€€€€€€€€€€¹•Ù…±Õ…Ñ” ™µÕÐM¥µÕ±…Ñ¥½¸èé¹•Ü ÄÄ¤°€™…Ñ…±½œ¤4(€€€€€€€€€€€€¹•áÁ•Ð ‰Ù…±¥•Ù•¹Ð•Ù…±Õ…Ñ¥½¸ˆ¤ì4(€€€€€€€…ÍÍ•ÉÑ}•Ä„¡½µµ…¹‘Ì¹±•¸ ¤°€Ä¤ì4(€€€ô4(4(€€€€mÑ•ÍÑt4(€€€™¸é•É½}µ•…¹}Ñ¥µ•}¥Í}É•©•Ñ• ¤ì4(€€€€€€€±•ÐµÕÐ…Ñ…±½œ€ôÙ•¹Ñ…Ñ…±½œèé‘•™…Õ±Ð ¤ì4(€€€€€€€…ÍÍ•ÉÐ„¡µ…Ñ¡•Ì„ 4(€€€€€€€€€€€…Ñ…±½œ¹¥¹Í•ÉÐ¡•Ù•¹Ñ}Ý¥Ñ¡}µÑÑ  À¤¤°4(€€€€€€€€€€€ÉÈ¡Ù•¹Ñ…Ñ…±½ÉÉ½Èèé%¹Ù…±¥‘5•…¹Q¥µ•Q½!…ÁÁ•¸¡|¤¤4(€€€€€€€€¤¤ì4(€€€ô4)ô4(
