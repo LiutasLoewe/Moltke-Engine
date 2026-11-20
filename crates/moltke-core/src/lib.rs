@@ -7,8 +7,8 @@
 mod calendar;
 mod clock;
 mod command;
-mod events;
 mod entities;
+mod events;
 mod ids;
 mod map_graph;
 mod model;
@@ -22,8 +22,8 @@ mod trigger;
 pub use calendar::{CalendarConfig, CalendarDate, CalendarError};
 pub use clock::{FixedStepClock, PacerError};
 pub use command::{CommandAction, CommandError, CommandOutcome, QueuedCommand};
-pub use events::{EventId, EventInstanceId, EventRuntimeState, EventStateError, PendingEvent};
 pub use entities::{ComponentValue, EntityStore, EntityStoreError, GenericEntity};
+pub use events::{EventId, EventInstanceId, EventRuntimeState, EventStateError, PendingEvent};
 pub use ids::{CountryId, CountryTag, InvalidCountryTag, PlayerId, ProvinceId, Tick};
 pub use map_graph::{EdgeId, GraphError, MapEdge, MapGraph, MapNode, NodeId, Path, Position3};
 pub use model::{Country, Province, StateValidationError, WorldState};
@@ -36,3 +36,4 @@ pub use rng::DeterministicRng;
 pub use save::SaveError;
 pub use simulation::{ClockError, QueueError, Simulation};
 pub use trigger::{Comparison, TriggerError, TriggerExpr};
+

@@ -1,7 +1,7 @@
 use crate::{
-    CalendarConfig, CalendarError, CountryId, CountryTag, DeterministicRng, EntityId,
-    EntityStore, EntityStoreError, EventRuntimeState, EventStateError, Fixed, GraphError,
-    MapGraph, ModifierError, ModifierSet, ProvinceId, StatId, Tick,
+    CalendarConfig, CalendarError, CountryId, CountryTag, DeterministicRng, EntityId, EntityStore,
+    EntityStoreError, EventRuntimeState, EventStateError, Fixed, GraphError, MapGraph,
+    ModifierError, ModifierSet, ProvinceId, StatId, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -209,3 +209,4 @@ impl std::fmt::Display for StateValidationError {
 }
 
 impl std::error::Error for StateValidationError {}
+

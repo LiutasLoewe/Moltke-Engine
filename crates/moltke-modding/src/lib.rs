@@ -209,8 +209,9 @@ fn install_snapshot(lua: &Lua, simulation: &Simulation) -> mlua::Result<()> {
         }
         row.set("components", components)?;
         entities.raw_set(
-            i64::try_from(index + 1)
-                .map_err(|_| mlua::Error::RuntimeError("entity snapshot is too large".to_owned()))?,
+            i64::try_from(index + 1).map_err(|_| {
+                mlua::Error::RuntimeError("entity snapshot is too large".to_owned())
+            })?,
             row,
         )?;
     }
@@ -412,3 +413,4 @@ fn optional_u64(table: &Table, key: &str) -> mlua::Result<Option<u64>> {
         ))),
     }
 }
+

@@ -190,15 +190,24 @@ pub enum EntityStoreError {
     DuplicateEntity(EntityId),
     UnknownEntity(EntityId),
     InvalidKey(String),
-    DuplicateTag { id: EntityId, tag: String },
-    UnknownTag { id: EntityId, tag: String },
+    DuplicateTag {
+        id: EntityId,
+        tag: String,
+    },
+    UnknownTag {
+        id: EntityId,
+        tag: String,
+    },
     UnknownComponentField {
         id: EntityId,
         component: String,
         field: String,
     },
     UnknownReference(EntityId),
-    EmptyComponent { id: EntityId, component: String },
+    EmptyComponent {
+        id: EntityId,
+        component: String,
+    },
 }
 
 impl fmt::Display for EntityStoreError {
@@ -239,8 +248,7 @@ mod tests {
             .expect("set reference");
 
         let json = serde_json::to_string(&store).expect("serialize entity store");
-        let restored: EntityStore =
-            serde_json::from_str(&json).expect("deserialize entity store");
+        let restored: EntityStore = serde_json::from_str(&json).expect("deserialize entity store");
         assert_eq!(restored, store);
         restored.validate().expect("validate restored store");
     }
@@ -258,3 +266,4 @@ mod tests {
         assert_eq!(result, Err(EntityStoreError::UnknownReference(EntityId(2))));
     }
 }
+
