@@ -50,7 +50,8 @@ impl TriggerExpr {
             }
             Ok(())
         }
-        visit(self, 0, &mut 0)
+        let mut count = 0;
+        visit(self, 0, &mut count)
     }
 
     fn evaluate_inner(&self, state: &mut WorldState) -> Result<bool, TriggerError> {
