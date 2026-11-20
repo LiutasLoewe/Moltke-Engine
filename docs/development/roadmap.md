@@ -1,6 +1,6 @@
 # Development roadmap
 
-## Milestone 1 — Generic map graph and modifiers (current)
+## Milestone 1 — Generic map graph and modifiers (implemented; compile verification pending)
 - Stable directed nodes and edges, integer positions and costs, tags, graph validation, and deterministic Dijkstra.
 - Integer cost overrides and blocked edges are supplied as a precomputed table; the pathfinder never calls Lua.
 - Generic entities and stat keys, fixed-point additive and multiplicative modifiers, source attribution, expiry, stable evaluation, and a derived per-tick cache.
