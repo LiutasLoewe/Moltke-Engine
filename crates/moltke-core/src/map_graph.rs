@@ -35,6 +35,7 @@ pub struct MapGraph {
     nodes: BTreeMap<NodeId, MapNode>,
     edges: BTreeMap<EdgeId, MapEdge>,
     outgoing: BTreeMap<NodeId, BTreeSet<EdgeId>>,
+    node_keys: BTreeMap<String, NodeId>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GraphError {
@@ -52,9 +53,10 @@ impl MapGraph {
     pub fn add_node(&mut self, node: MapNode) -> Result<(), GraphError> {
         if node.key.trim().is_empty() { return Err(GraphError::EmptyNodeKey); }
         if self.nodes.contains_key(&node.id) { return Err(GraphError::DuplicateNode(node.id)); }
-        if self.nodes.values().any(|n| n.key == node.key) {
+        if self.node_keys.contains_key(&node.key) {
             return Err(GraphError::DuplicateNodeKey(node.key));
         }
+        self.node_keys.insert(node.key.clone(), node.id);
         self.outgoing.insert(node.id, BTreeSet::new());
         self.nodes.insert(node.id, node);
         Ok(())
@@ -65,7 +67,10 @@ impl MapGraph {
         if !self.nodes.contains_key(&edge.from) { return Err(GraphError::MissingEndpoint(edge.from)); }
         if !self.nodes.contains_key(&edge.to) { return Err(GraphError::MissingEndpoint(edge.to)); }
         if edge.base_cost == 0 { return Err(GraphError::InvalidBaseCost(edge.id)); }
-        self.outgoing.get_mut(&edge.from).expect("validated endpoint").insert(edge.id);
+        let Some(outgoing) = self.outgoing.get_mut(&edge.from) else {
+            return Err(GraphError::CorruptAdjacency);
+        };
+        outgoing.insert(edge.id);
         self.edges.insert(edge.id, edge);
         Ok(())
     }
@@ -116,11 +121,13 @@ impl MapGraph {
     pub fn validate(&self) -> Result<(), GraphError> {
         let mut expected: BTreeMap<NodeId, BTreeSet<EdgeId>> =
             self.nodes.keys().map(|id| (*id, BTreeSet::new())).collect();
-        let mut keys = BTreeSet::new();
+        let mut keys = BTreeMap::new();
         for (id, node) in &self.nodes {
             if *id != node.id { return Err(GraphError::CorruptAdjacency); }
             if node.key.trim().is_empty() { return Err(GraphError::EmptyNodeKey); }
-            if !keys.insert(&node.key) { return Err(GraphError::DuplicateNodeKey(node.key.clone())); }
+            if keys.insert(node.key.clone(), *id).is_some() {
+                return Err(GraphError::DuplicateNodeKey(node.key.clone()));
+            }
         }
         for (id, edge) in &self.edges {
             if *id != edge.id { return Err(GraphError::CorruptAdjacency); }
@@ -129,7 +136,9 @@ impl MapGraph {
             if !self.nodes.contains_key(&edge.to) { return Err(GraphError::MissingEndpoint(edge.to)); }
             outgoing.insert(edge.id);
         }
-        if expected != self.outgoing { return Err(GraphError::CorruptAdjacency); }
+        if expected != self.outgoing || keys != self.node_keys {
+            return Err(GraphError::CorruptAdjacency);
+        }
         Ok(())
     }
 }
