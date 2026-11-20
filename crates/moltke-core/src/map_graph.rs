@@ -117,11 +117,13 @@ impl MapGraph {
         let mut expected: BTreeMap<NodeId, BTreeSet<EdgeId>> =
             self.nodes.keys().map(|id| (*id, BTreeSet::new())).collect();
         let mut keys = BTreeSet::new();
-        for node in self.nodes.values() {
+        for (id, node) in &self.nodes {
+            if *id != node.id { return Err(GraphError::CorruptAdjacency); }
             if node.key.trim().is_empty() { return Err(GraphError::EmptyNodeKey); }
             if !keys.insert(&node.key) { return Err(GraphError::DuplicateNodeKey(node.key.clone())); }
         }
-        for edge in self.edges.values() {
+        for (id, edge) in &self.edges {
+            if *id != edge.id { return Err(GraphError::CorruptAdjacency); }
             if edge.base_cost == 0 { return Err(GraphError::InvalidBaseCost(edge.id)); }
             let Some(outgoing) = expected.get_mut(&edge.from) else { return Err(GraphError::MissingEndpoint(edge.from)); };
             if !self.nodes.contains_key(&edge.to) { return Err(GraphError::MissingEndpoint(edge.to)); }
