@@ -35,6 +35,7 @@ pub struct MapGraph {
     nodes: BTreeMap<NodeId, MapNode>,
     edges: BTreeMap<EdgeId, MapEdge>,
     outgoing: BTreeMap<NodeId, BTreeSet<EdgeId>>,
+    #[serde(default)]
     node_keys: BTreeMap<String, NodeId>,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
