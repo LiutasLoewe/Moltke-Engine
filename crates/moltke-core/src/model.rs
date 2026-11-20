@@ -1,6 +1,6 @@
 use crate::{
-    CountryId, CountryTag, DeterministicRng, GraphError, MapGraph, ModifierError, ModifierSet,
-    ProvinceId, Tick,
+    CountryId, CountryTag, DeterministicRng, EntityId, Fixed, GraphError, MapGraph,
+    ModifierError, ModifierSet, ProvinceId, StatId, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -31,6 +31,8 @@ pub struct WorldState {
     pub(crate) map: MapGraph,
     #[serde(default)]
     pub(crate) modifiers: ModifierSet,
+    #[serde(default)]
+    pub(crate) base_stats: BTreeMap<EntityId, BTreeMap<StatId, Fixed>>,
 }
 
 impl WorldState {
@@ -42,6 +44,7 @@ impl WorldState {
             provinces: BTreeMap::new(),
             map: MapGraph::default(),
             modifiers: ModifierSet::default(),
+            base_stats: BTreeMap::new(),
         }
     }
 
@@ -70,6 +73,21 @@ impl WorldState {
     pub fn modifiers(&self) -> &ModifierSet { &self.modifiers }
     pub fn modifiers_mut(&mut self) -> &mut ModifierSet { &mut self.modifiers }
 
+    pub fn base_stat(&self, entity: EntityId, stat: &StatId) -> Fixed {
+        self.base_stats.get(&entity).and_then(|stats| stats.get(stat)).copied().unwrap_or(Fixed::ZERO)
+    }
+
+    pub fn set_base_stat(&mut self, entity: EntityId, stat: StatId, value: Fixed) {
+        self.base_stats.entry(entity).or_default().insert(stat, value);
+    }
+
+    pub fn stat_value(
+        &mut self, entity: EntityId, stat: &StatId, now: Tick,
+    ) -> Result<Fixed, ModifierError> {
+        let base = self.base_stat(entity, stat);
+        self.modifiers.evaluate(entity, stat, base, now)
+    }
+
     /// Draws from the world's serialized deterministic random stream.
     pub fn random_u64(&mut self) -> u64 {
         self.rng.next_u64()
@@ -78,6 +96,11 @@ impl WorldState {
     pub fn validate(&self) -> Result<(), StateValidationError> {
         self.map.validate().map_err(StateValidationError::Graph)?;
         self.modifiers.validate().map_err(StateValidationError::Modifiers)?;
+        for stats in self.base_stats.values() {
+            for stat in stats.keys() {
+                StatId::new(stat.as_str()).map_err(|_| StateValidationError::InvalidStatId(stat.as_str().to_owned()))?;
+            }
+        }
         let mut tags = std::collections::BTreeSet::new();
 
         for (id, country) in &self.countries {
@@ -116,6 +139,7 @@ pub enum StateValidationError {
     StabilityOutOfRange(CountryId),
     Graph(GraphError),
     Modifiers(ModifierError),
+    InvalidStatId(String),
     MissingProvinceOwner {
         province_id: ProvinceId,
         country_id: CountryId,
