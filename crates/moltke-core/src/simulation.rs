@@ -156,6 +156,12 @@ impl Simulation {
         }
     }
 
+    pub(crate) fn rebuild_derived_indexes(&mut self) -> Result<(), LoadValidationError> {
+        self.state.map.rebuild_indexes().map_err(|e| LoadValidationError::State(StateValidationError::Graph(e)))?;
+        self.state.modifiers.rebuild_index().map_err(|e| LoadValidationError::State(StateValidationError::Modifiers(e)))?;
+        Ok(())
+    }
+
     pub(crate) fn validate_loaded(&self) -> Result<(), LoadValidationError> {
         self.state.validate().map_err(LoadValidationError::State)?;
 
