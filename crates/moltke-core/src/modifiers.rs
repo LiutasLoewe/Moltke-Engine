@@ -63,7 +63,7 @@ struct CacheKey { target: EntityId, stat: StatId, base: Fixed }
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ModifierSet {
     modifiers: BTreeMap<ModifierId, Modifier>,
-    #[serde(default)]
+    #[serde(skip, default)]
     by_target_stat: BTreeMap<(EntityId, StatId), BTreeSet<ModifierId>>,
     #[serde(skip, default)]
     cache_tick: Option<Tick>,
@@ -143,6 +143,16 @@ impl ModifierSet {
     }
 
     pub fn modifiers(&self) -> &BTreeMap<ModifierId, Modifier> { &self.modifiers }
+
+    pub(crate) fn rebuild_index(&mut self) -> Result<(), ModifierError> {
+        let mut index: BTreeMap<(EntityId, StatId), BTreeSet<ModifierId>> = BTreeMap::new();
+        for (id, modifier) in &self.modifiers {
+            if id != &modifier.id { return Err(ModifierError::CorruptIndex); }
+            index.entry((modifier.target, modifier.stat.clone())).or_default().insert(*id);
+        }
+        self.by_target_stat = index;
+        Ok(())
+    }
 
     pub fn validate(&self) -> Result<(), ModifierError> {
         let mut expected: BTreeMap<(EntityId, StatId), BTreeSet<ModifierId>> = BTreeMap::new();
