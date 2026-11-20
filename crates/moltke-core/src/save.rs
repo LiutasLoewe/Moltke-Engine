@@ -29,13 +29,14 @@ impl Simulation {
 
     /// Loads a save only after checking its format version and state invariants.
     pub fn from_save_json(source: &str) -> Result<Self, SaveError> {
-        let envelope: SaveEnvelope = serde_json::from_str(source).map_err(SaveError::Json)?;
+        let mut envelope: SaveEnvelope = serde_json::from_str(source).map_err(SaveError::Json)?;
         if envelope.format_version != SAVE_FORMAT_VERSION {
             return Err(SaveError::UnsupportedFormat(envelope.format_version));
         }
-        envelope
-            .simulation
-            .validate_loaded()
+        envelope.simulation
+            .rebuild_derived_indexes()
+            .map_err(|error| SaveError::InvalidState(format!("{error:?}")))?;
+        envelope.simulation.validate_loaded()
             .map_err(|error| SaveError::InvalidState(format!("{error:?}")))?;
         Ok(envelope.simulation)
     }
