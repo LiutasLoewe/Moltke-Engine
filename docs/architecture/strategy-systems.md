@@ -34,7 +34,9 @@ Relationships can use the same values with a pair of entity IDs as a relation ke
 
 ## Events and Lua
 
-Content defines event IDs, trigger expressions, options, and localization keys. Trigger evaluation reads a stable snapshot. Mean-time-to-happen uses integer probability scheduling and the simulation random stream, never wall-clock time or floating probability.
+The core now has a bounded, serializable trigger AST for tick thresholds, generic stat comparisons, and All/Any/Not composition. Base stats and modifier-adjusted values are queried through EntityId and StatId. Generic set-stat/add-modifier/remove-modifier commands provide a deterministic effect boundary.
+
+Content will define event IDs, trigger expressions, options, and localization keys. Trigger evaluation reads a stable snapshot. Mean-time-to-happen uses integer probability scheduling and the simulation random stream, never wall-clock time or floating probability.
 
 Choosing an option validates it and emits commands for a defined tick. On-actions are typed hooks at documented simulation phases. Lua receives narrow snapshot values and can return commands through a host API. Simulation scripts cannot access files, OS, network, wall-clock time, native modules, or nondeterministic random. UI-only scripting can have a separate capability set and cannot change authoritative state.
 
